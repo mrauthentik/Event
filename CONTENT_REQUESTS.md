@@ -3,33 +3,33 @@
 **Horemow International Holiness General Conference 2026**  
 **Tracking File for Missing Copy, Assets, and Media**
 
-> **Rule:** Never invent content. Wherever copy, a photo, a name, a price or a date is missing, render a clearly labelled placeholder in the UI and log it here. No lorem ipsum, no stock-looking people.
+> **Rule:** Never invent content. Wherever copy, a photo, a name, a price or a date is missing, render a clearly labelled placeholder in the UI and log it here. No lorem ipsum, no filler copy, no stock-looking people.
 
 ---
 
-## Phase 1 Content Batch (Required for Public Go-Live)
+## Phase 1 Content Batch (Public Go-Live)
 
-| ID | Page / Area | Slot / Component | Content Type | Dimensions / Spec | Description & Notes | Status |
-|---|---|---|---|---|---|---|
-| **CR-001** | Global Header / Footer | Brand Logo Lockup | Vector / Image | SVG or high-res PNG (transparent). Dark & Light versions | Official Horemow logo lockup. Currently using text/placeholder lockup. | PENDING OWNER |
-| **CR-002** | Home Page | Hero Section Background | Photography | 1920x1080 (Landscape, high-res) | Real photograph of Horemow congregation / people worshipping reverently at camp. | PENDING OWNER |
-| **CR-003** | Home Page | "Why Attend" Top Image | Photography | 800x600 (Rounded chamfered corner) | Real photo of attendee/speaker or conference session. | PENDING OWNER |
-| **CR-004** | Home Page | "Why Attend" Bottom Image | Photography | 800x600 (Rounded) | Real photo of congregation praying/listening. | PENDING OWNER |
-| **CR-005** | Home Page | About Us Collage (Image 1) | Photography | 600x700 (Portrait) | Real photo of ministry teaching / ministers. | PENDING OWNER |
-| **CR-006** | Home Page | About Us Collage (Image 2) | Photography | 500x500 (Square) | Real photo of youth / camp interaction. | PENDING OWNER |
-| **CR-007** | Home Page | About Us Video Thumbnail | Photography / Video Link | 400x300 thumbnail + YouTube URL | Conference preview video or message excerpt. | PENDING OWNER |
-| **CR-008** | Home / Ministers | Minister 1: Pastor Paul Rika | Photo & Biography | High-res portrait (min 800x800) + Bio copy | Official portrait and short biography of Pastor Paul Rika. | PENDING OWNER |
-| **CR-009** | Home / Ministers | Minister 2: Evang. Linda Paul Rika | Photo & Biography | High-res portrait (min 800x800) + Bio copy | Official portrait and short biography of Evang. Linda Paul Rika. | PENDING OWNER |
-| **CR-010** | Ministers Page | Additional Ministers | List / Profiles | Photos, titles, bios | Additional ministers (TBD; currently rendering "More ministers to be announced" card). | PENDING OWNER |
-| **CR-011** | About Page | Ministry Story & Background | Copy | Text (3–5 paragraphs) | Official statement on Horemow's mission, history, and vision for IHGC 2026. | PENDING OWNER |
-| **CR-012** | Conference Page | Theme Exposition | Copy | Text | Theological explanation of theme "Man and Satan in Contention Against the Holy God". | PENDING OWNER |
-| **CR-013** | Camp Info / FAQ | Venue Map & Directions | Image / Coordinates | Google Maps link / Coordinates + directions | Detailed road directions from Abuja city centre / Gwagwalada to Kwali Campground. | PENDING OWNER |
-| **CR-014** | Camp Info | Lodging & Meals Advice | Copy | Text | Verified local contacts or guidance for attendees arranging nearby lodging in Kwali/Gwagwalada and camp food stalls. | PENDING OWNER |
-| **CR-015** | FAQ Page | Official FAQ Questions & Answers | Copy | Q&A pairs | Official answers for transport, security, registration, medical services on camp. | PENDING OWNER |
-| **CR-016** | Contact Page | Official Contact Email | Text | Email address | Dedicated support email address (e.g. `conference@horemow.org`). Currently phone + WhatsApp only. | PENDING OWNER |
-| **CR-017** | Global Footer | Social Media Channels | URLs | YouTube, Facebook, WhatsApp, etc. | Verified official links for Horemow worldwide channels. | PENDING OWNER |
-| **CR-018** | Register Page | Bank Transfer Details | Financial info | Bank name, Account Name, Account Number | Dedicated bank account for manual transfer payments (NGN). | PENDING OWNER |
-| **CR-019** | Legal | Privacy Policy & Terms of Service | Legal copy | Text | Final legal text complying with Nigeria Data Protection Act (NDPA) and finalized refund/substitution terms. | PENDING OWNER |
+| ID | Page / Area | Slot / Component | Content Type | Status | Asset Path / Notes |
+|---|---|---|---|---|---|
+| **CR-001** | Global Header / Footer | Brand Logo Lockup | Vector / Image | **FULFILLED** | `/images/horemow_logo.png` |
+| **CR-002** | Home Page | Hero Section Background | Photography | **FULFILLED** | `/images/crowd-bw.jpg` |
+| **CR-003** | Home Page | "Why Attend" Top Image | Photography | **FULFILLED** | `/images/crowd-bw_2.jpg` |
+| **CR-004** | Home Page | "Why Attend" Bottom Image | Photography | **FULFILLED** | `/images/crowd-bw_3.jpg` |
+| **CR-005** | Home Page | About Us Collage (Image 1) | Photography | **FULFILLED** | `/images/about_us_1.jpg` |
+| **CR-006** | Home Page | About Us Collage (Image 2) | Photography | **FULFILLED** | `/images/about_us_2.jpg` |
+| **CR-007** | Home Page | About Us Video Thumbnail | Photography | **FULFILLED** | `/images/about_us_3.jpg` |
+| **CR-008** | Home / Ministers | Minister 1: Pastor Paul Rika | Photo & Bio | **FULFILLED** | `/images/pst_paul_rika_1.jpg` (Alt: `/images/pst_paul_rika_2.jpg`) + Official bio |
+| **CR-009** | Home / Ministers | Minister 2: Evang. Linda Paul Rika | Photo & Bio | **FULFILLED** | `/images/linda_paul_rika.jpg` + Official bio |
+| **CR-010** | Ministers Page | Additional Ministers | List / Profiles | **PENDING OWNER** | "More ministers to be announced" card rendered |
+| **CR-011** | About Page | Ministry Story & Background | Copy | **FULFILLED** | Official text provided (Origins, 2009/2010 Kwali, Mission, Worldwide chapters) |
+| **CR-012** | Conference Page | Theme Exposition | Copy | **PENDING OWNER** | Theme: "Man and Satan in Contention Against the Holy God" |
+| **CR-013** | Camp Info / FAQ | Venue Map & Directions | Embed / Map | **FULFILLED** | Verified Google Maps embed for Holiness Camp Ground, Kwali Abuja |
+| **CR-014** | Camp Info | Lodging & Meals Advice | Copy | **PENDING OWNER** | Advisory copy stating attendees arrange their own stay and food |
+| **CR-015** | FAQ Page | Official FAQ Questions & Answers | Copy | **PENDING OWNER** | Core FAQs drafted based on brief facts |
+| **CR-016** | Contact Page | Official Contact Email | Text | **PENDING OWNER** | None yet; dynamic slot hidden/shown |
+| **CR-017** | Global Footer | Social Media Channels | URLs | **FULFILLED** | YouTube & Facebook ministry links provided |
+| **CR-018** | Register Page | Bank Transfer Details | Financial info | **PENDING OWNER** | Manual bank transfer account details |
+| **CR-019** | Legal | Privacy Policy & Terms of Service | Legal copy | **PENDING OWNER** | Draft terms marked clearly as DRAFT |
 
 ---
 

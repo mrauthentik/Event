@@ -54,3 +54,4 @@ export function formatMoneyMinor(amountMinor: number, currency: SupportedCurrenc
     maximumFractionDigits: 2,
   }).format(major);
 }
+

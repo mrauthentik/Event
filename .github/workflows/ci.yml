@@ -36,3 +36,4 @@ jobs:
 
       - name: Visual & E2E Tests
         run: pnpm test:e2e
+

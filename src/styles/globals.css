@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mint: #8EE3D6;
+  --color-mint-hover: #7BD4C7;
+  --color-mint-light: #EAF9F7;
+  --color-mint-border: #CDEFEA;
+
+  --color-navy-dark: #0E1020;
+  --color-navy-footer: #171A2B;
+  --color-navy-card: #121528;
+
+  --color-ink: #111320;
+  --color-muted: #6B7280;
+  --color-subtle: #9CA3AF;
+  --color-input-bg: #F3F4F6;
+
+  --font-heading: var(--font-montserrat), sans-serif;
+  --font-body: var(--font-inter), sans-serif;
+}
+
+:root {
+  --font-montserrat: 'Montserrat', sans-serif;
+  --font-inter: 'Inter', sans-serif;
+}
+
+body {
+  color: var(--color-ink);
+  background-color: #FFFFFF;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+}
+
+/* Numerals for countdowns */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Asymmetric chamfer corner matching KILO 'Why Attend' section */
+.clip-chamfer-tr {
+  clip-path: polygon(0 0, calc(100% - 48px) 0, 100% 48px, 100% 100%, 0 100%);
+}
+
+/* Custom styled scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F3F4F6;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+

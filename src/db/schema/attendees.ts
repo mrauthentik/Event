@@ -91,3 +91,4 @@ export const groupSeats = pgTable(
     index("group_seats_invite_idx").on(table.inviteCode),
   ]
 );
+

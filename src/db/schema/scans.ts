@@ -51,3 +51,4 @@ export const bookletStock = pgTable(
     index("booklet_stock_stand_date_idx").on(table.standId, table.allocatedDate),
   ]
 );
+

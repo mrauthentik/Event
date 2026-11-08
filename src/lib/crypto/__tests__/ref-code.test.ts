@@ -27,3 +27,4 @@ describe("Reference Code Generator", () => {
     expect(isValidRefCode("HGC-ABCDEI")).toBe(false); // contains 'I'
   });
 });
+

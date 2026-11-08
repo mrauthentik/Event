@@ -64,3 +64,4 @@ export const feePolicyEnum = pgEnum("fee_policy", [
   "organizer_absorbs",
   "pass_to_customer",
 ]);
+

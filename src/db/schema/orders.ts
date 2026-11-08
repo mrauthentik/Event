@@ -91,3 +91,4 @@ export const manualPayments = pgTable(
     index("manual_payments_status_idx").on(table.status),
   ]
 );
+
