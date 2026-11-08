@@ -566,3 +566,4 @@ export default function StaffScannerPage() {
     </div>
   );
 }
+

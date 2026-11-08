@@ -46,3 +46,4 @@ class ScannerDatabase extends Dexie {
 }
 
 export const scannerDb = new ScannerDatabase();
+
