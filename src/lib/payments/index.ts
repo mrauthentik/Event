@@ -21,3 +21,4 @@ export function getPaymentProvider(currency: SupportedCurrency): PaymentProvider
 
 export { paystack, paypal };
 export * from "./provider.interface";
+

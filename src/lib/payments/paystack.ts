@@ -123,3 +123,4 @@ export class PaystackProvider implements PaymentProvider {
     return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature));
   }
 }
+

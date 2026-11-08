@@ -1,0 +1,22 @@
+{
+  "name": "IHGC 2026 Staff Scanner",
+  "short_name": "Gate Scanner",
+  "description": "Offline-first ticket scanner and booklet issuance PWA for Horemow IHGC 2026",
+  "start_url": "/staff/scanner",
+  "display": "standalone",
+  "background_color": "#0E1020",
+  "theme_color": "#0E1020",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/images/horemow_logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/images/horemow_logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

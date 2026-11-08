@@ -34,3 +34,4 @@ export interface PaymentProvider {
   verifyPayment(providerRef: string): Promise<VerifyPaymentResult>;
   verifyWebhookSignature(rawBody: string, headers: Record<string, string | string[] | undefined>): boolean;
 }
+

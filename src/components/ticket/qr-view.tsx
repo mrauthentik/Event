@@ -76,3 +76,4 @@ export function QrView({ value, refCode, attendeeName }: QrViewProps) {
     </div>
   );
 }
+
