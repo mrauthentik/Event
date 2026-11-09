@@ -3,7 +3,7 @@ import Image from "next/image";
 import { Header } from "@/components/marketing/header";
 import { Footer } from "@/components/marketing/footer";
 import { SITE_CONFIG } from "@/config/site";
-import { Calendar, Clock, MapPin, Users, Flame, BookMarked, Bell } from "lucide-react";
+import { Calendar, Clock, MapPin, Users, Flame, BookMarked, Bell, Download } from "lucide-react";
 
 export const metadata = {
   title: "The Conference | IHGC 2026",
@@ -66,6 +66,48 @@ export default function ConferencePage() {
                 <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Registration</div>
                 <div className="text-base font-bold text-[#111320] mt-0.5">₦5,000 / $20</div>
                 <div className="text-xs text-gray-500">Flat rate for every attendee</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Official Conference Flyer */}
+          <div className="bg-[#F8FAFC] rounded-[24px] border border-gray-100 overflow-hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-2">
+              <div className="relative aspect-[3/4] lg:aspect-auto lg:min-h-[560px] bg-[#0E1020]">
+                <Image
+                  src="/images/conference_flyer.png"
+                  alt="Official flyer for the International Holiness General Conference 2026 — Man and Satan in Contention Against the Holy God, 8–11 December 2026, Holiness Campground, Kwali, Abuja"
+                  fill
+                  className="object-contain"
+                  sizes="(max-width: 1024px) 100vw, 50vw"
+                />
+              </div>
+              <div className="p-8 sm:p-12 flex flex-col justify-center space-y-6">
+                <span className="text-xs font-bold uppercase tracking-widest text-[#0E7A6E]">
+                  Official Flyer
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-bold text-[#111320] tracking-tight">
+                  International Holiness General Conference 2026
+                </h2>
+                <p className="text-sm text-[#6B7280] leading-relaxed">
+                  &ldquo;{SITE_CONFIG.theme}&rdquo; — Join thousands of believers from 8 to 11 December 2026 at the Holiness Campground, Kwali, Abuja. Download or share the official conference flyer with your parish.
+                </p>
+                <div className="flex flex-wrap items-center gap-4 pt-2">
+                  <a
+                    href="/images/conference_flyer.png"
+                    download="IHGC-2026-Flyer.png"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#0E1020] text-white font-bold text-sm hover:bg-[#1A1D36] transition-colors"
+                  >
+                    <Download className="w-4 h-4 text-[#8EE3D6]" />
+                    Download Flyer
+                  </a>
+                  <Link
+                    href="/register"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-[#0E1020] text-[#0E1020] font-bold text-sm hover:bg-[#0E1020] hover:text-white transition-colors"
+                  >
+                    Register Now
+                  </Link>
+                </div>
               </div>
             </div>
           </div>
