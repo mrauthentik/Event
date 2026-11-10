@@ -19,9 +19,6 @@ export interface SignedTicketPayload {
  * Encodes a byte array to base64url without padding.
  */
 export function bytesToBase64Url(bytes: Uint8Array): string {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(bytes).toString("base64url");
-  }
   const binary = Array.from(bytes).map((b) => String.fromCharCode(b)).join("");
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
@@ -30,9 +27,6 @@ export function bytesToBase64Url(bytes: Uint8Array): string {
  * Decodes a base64url string to Uint8Array.
  */
 export function base64UrlToBytes(str: string): Uint8Array {
-  if (typeof Buffer !== "undefined") {
-    return new Uint8Array(Buffer.from(str, "base64url"));
-  }
   let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
   while (base64.length % 4) {
     base64 += "=";
@@ -140,6 +134,7 @@ export async function verifyTicketToken(
 
     return { isValid: true, payload };
   } catch (err: any) {
+    console.error("[verifyTicketToken] threw:", err);
     return { isValid: false, error: err?.message || "Verification failed" };
   }
 }
