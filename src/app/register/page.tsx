@@ -519,11 +519,6 @@ export default function RegisterPage() {
                 </span>
               </button>
 
-              <div className="text-center text-[11px] text-gray-400 flex items-center justify-center gap-2">
-                <span>🔒 256-bit Encrypted Checkout</span>
-                <span>•</span>
-                <span>Instant Cryptographic QR Issued</span>
-              </div>
             </div>
 
           </form>

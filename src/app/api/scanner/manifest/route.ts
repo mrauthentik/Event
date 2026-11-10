@@ -37,14 +37,14 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const verifyingPublicKey =
-      process.env.NEXT_PUBLIC_TICKET_VERIFYING_PUBLIC_KEY ||
-      // Fallback matching mock signing key
-      "mock_public_key_hex";
+    const verifyingSecret =
+      process.env.NEXT_PUBLIC_TICKET_VERIFYING_SECRET ||
+      // Fallback matching dev signing secret
+      "dev-insecure-ticket-secret";
 
     return NextResponse.json({
       serverTimestamp: new Date().toISOString(),
-      verifyingPublicKey,
+      verifyingSecret,
       count: attendeeList.length,
       attendees: attendeeList.map((a) => ({
         tokenHash: a.qrTokenHash,

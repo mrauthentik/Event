@@ -68,7 +68,7 @@ export async function GET(
     const isVerified = verification.isSuccessful || isMockSuccess;
 
     if (isVerified) {
-      const signingKey = process.env.TICKET_SIGNING_PRIVATE_KEY || "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+      const signingKey = process.env.TICKET_SIGNING_SECRET || "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
       // Execute atomic transition in database
       const confirmedAttendees = await db.transaction(async (tx) => {

@@ -1,8 +1,19 @@
-import * as ed from "@noble/ed25519";
-import { sha512 } from "@noble/hashes/sha2.js";
+/**
+ * Ticket token signing/verification using HMAC-SHA256 (Web Crypto).
+ *
+ * NOTE: filename kept as `ed25519.ts` for import compatibility — the
+ * implementation is now symmetric HMAC, not Ed25519. The QR payload format
+ * is unchanged: `base64url(payloadJson).base64url(signature)`.
+ *
+ * Server signs with TICKET_SIGNING_SECRET (private).
+ * Scanner verifies with NEXT_PUBLIC_TICKET_VERIFYING_SECRET (embedded in bundle).
+ */
 
-// Configure SHA-512 for @noble/ed25519
-ed.hashes.sha512 = (...messages: Uint8Array[]) => sha512(ed.etc.concatBytes(...messages));
+export interface SignedTicketPayload {
+  version: number;
+  attendeeId: string;
+  nonce: string; // 128-bit hex
+}
 
 /**
  * Encodes a byte array to base64url without padding.
@@ -44,58 +55,61 @@ export async function sha256Hex(data: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export interface SignedTicketPayload {
-  version: number;
-  attendeeId: string;
-  nonce: string; // 128-bit hex
+function randomNonceHex(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function importHmacKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"]
+  );
 }
 
 /**
- * Generates an Ed25519 keypair for ticket signing and offline verification.
- */
-export async function generateTicketKeyPair(): Promise<{ privateKeyHex: string; publicKeyHex: string }> {
-  const { secretKey, publicKey } = ed.keygen();
-  return {
-    privateKeyHex: ed.etc.bytesToHex(secretKey),
-    publicKeyHex: ed.etc.bytesToHex(publicKey),
-  };
-}
-
-/**
- * Issues an opaque, tamper-proof signed ticket token.
- * Contains no PII.
+ * Issues an opaque, tamper-proof ticket token.
+ * Contains no PII. `secret` is the shared HMAC secret.
  */
 export async function createTicketToken(
   attendeeId: string,
-  privateKeyHex: string
+  secret: string
 ): Promise<{ tokenString: string; tokenHash: string }> {
-  const nonceBytes = ed.etc.randomBytes(16);
-  const nonceHex = ed.etc.bytesToHex(nonceBytes);
-
   const payload: SignedTicketPayload = {
     version: 1,
     attendeeId,
-    nonce: nonceHex,
+    nonce: randomNonceHex(),
   };
 
   const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
-  const privKeyBytes = ed.etc.hexToBytes(privateKeyHex);
+  const key = await importHmacKey(secret);
+  const signature = await crypto.subtle.sign("HMAC", key, payloadBytes);
 
-  const signature = await ed.signAsync(payloadBytes, privKeyBytes);
-
-  // Format: Base64Url(payload) . Base64Url(signature)
-  const tokenString = `${bytesToBase64Url(payloadBytes)}.${bytesToBase64Url(signature)}`;
+  const tokenString = `${bytesToBase64Url(payloadBytes)}.${bytesToBase64Url(new Uint8Array(signature))}`;
   const tokenHash = await sha256Hex(tokenString);
 
   return { tokenString, tokenHash };
 }
 
+/** Constant-time byte comparison. */
+function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
 /**
- * Verifies a ticket token offline using ONLY the public key.
+ * Verifies a ticket token offline using the shared HMAC secret.
  */
 export async function verifyTicketToken(
   tokenString: string,
-  publicKeyHex: string
+  secret: string
 ): Promise<{ isValid: boolean; payload?: SignedTicketPayload; error?: string }> {
   try {
     const parts = tokenString.split(".");
@@ -105,10 +119,15 @@ export async function verifyTicketToken(
 
     const payloadBytes = base64UrlToBytes(parts[0]);
     const signatureBytes = base64UrlToBytes(parts[1]);
-    const pubKeyBytes = ed.etc.hexToBytes(publicKeyHex);
 
-    const isValid = await ed.verifyAsync(signatureBytes, payloadBytes, pubKeyBytes);
-    if (!isValid) {
+    const key = await importHmacKey(secret);
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      signatureBytes as Uint8Array<ArrayBuffer>,
+      payloadBytes as Uint8Array<ArrayBuffer>
+    );
+    if (!valid) {
       return { isValid: false, error: "Invalid signature (forged ticket)" };
     }
 
@@ -121,13 +140,6 @@ export async function verifyTicketToken(
 
     return { isValid: true, payload };
   } catch (err: any) {
-    console.error("[verifyTicketToken] failed:", {
-      tokenPreview: tokenString.slice(0, 40),
-      tokenLength: tokenString.length,
-      pubKeyLength: publicKeyHex?.length,
-      pubKeyPreview: publicKeyHex?.slice(0, 16),
-      error: err?.message,
-    });
     return { isValid: false, error: err?.message || "Verification failed" };
   }
 }

@@ -139,7 +139,7 @@ export default function StaffScannerPage() {
   // Process a raw scanned token string
   const processToken = async (tokenString: string) => {
     const pubKey =
-      process.env.NEXT_PUBLIC_TICKET_VERIFYING_PUBLIC_KEY ||
+      process.env.NEXT_PUBLIC_TICKET_VERIFYING_SECRET ||
       "";
 
     const trimmed = tokenString.trim();
@@ -153,14 +153,7 @@ export default function StaffScannerPage() {
       attendee = await scannerDb.cachedAttendees.where("refCode").equals(trimmed).first();
     }
 
-    // 2. Signed token path: verify Ed25519 signature, resolve attendee by payload.attendeeId
-    console.log("[scanner] processToken:", {
-      tokenPreview: trimmed.slice(0, 40),
-      tokenLength: trimmed.length,
-      hasDot: trimmed.includes("."),
-      pubKeyLength: pubKey.length,
-      pubKeyPreview: pubKey.slice(0, 16),
-    });
+    // 2. Signed token path: verify HMAC signature, resolve attendee by payload.attendeeId
     if (!attendee && trimmed.includes(".") && pubKey) {
       const verified = await verifyTicketToken(trimmed, pubKey);
       if (verified.isValid && verified.payload?.attendeeId) {
@@ -173,7 +166,7 @@ export default function StaffScannerPage() {
         sounds.vibrate("error");
         setScanResult({
           type: "forged",
-          error: `Invalid Ed25519 signature — ${verified.error || "ticket rejected"}.`,
+          error: `Invalid ticket signature — ${verified.error || "ticket rejected"}.`,
         });
         return;
       }
@@ -186,7 +179,7 @@ export default function StaffScannerPage() {
         sounds.vibrate("error");
         setScanResult({
           type: "forged",
-          error: "Verifier public key not configured (NEXT_PUBLIC_TICKET_VERIFYING_PUBLIC_KEY).",
+          error: "Verifier secret not configured (NEXT_PUBLIC_TICKET_VERIFYING_SECRET).",
         });
         return;
       }
@@ -196,7 +189,7 @@ export default function StaffScannerPage() {
         sounds.vibrate("error");
         setScanResult({
           type: "forged",
-          error: "Invalid Ed25519 signature — Ticket is forged or corrupted.",
+          error: "Invalid ticket signature — Ticket is forged or corrupted.",
         });
         return;
       }

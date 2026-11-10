@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Reconcile each candidate that isn't already paid
     const signingKey =
-      process.env.TICKET_SIGNING_PRIVATE_KEY ||
+      process.env.TICKET_SIGNING_SECRET ||
       "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     for (const order of candidateOrders) {

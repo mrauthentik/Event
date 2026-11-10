@@ -39,7 +39,7 @@ export default async function TicketPage({
   });
 
   const signingKey =
-    process.env.TICKET_SIGNING_PRIVATE_KEY ||
+    process.env.TICKET_SIGNING_SECRET ||
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
   // Lookup group (if this is a group order) for dashboard link

@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     }
 
     const signingKey =
-      process.env.TICKET_SIGNING_PRIVATE_KEY ||
+      process.env.TICKET_SIGNING_SECRET ||
       "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     if (action === "approve") {

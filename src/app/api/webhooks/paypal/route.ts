@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
         });
 
         if (order && order.status !== "paid") {
-          const signingKey = process.env.TICKET_SIGNING_PRIVATE_KEY || "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+          const signingKey = process.env.TICKET_SIGNING_SECRET || "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
           const amountValue = parseFloat(capture.amount?.value || "0");
           const amountMinor = Math.round(amountValue * 100);
 

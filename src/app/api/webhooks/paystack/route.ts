@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (order && order.status !== "paid") {
-        const signingKey = process.env.TICKET_SIGNING_PRIVATE_KEY || "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        const signingKey = process.env.TICKET_SIGNING_SECRET || "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
         await db.transaction(async (txDb) => {
           // Transition order to paid

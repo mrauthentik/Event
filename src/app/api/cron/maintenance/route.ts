@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
       .limit(100);
 
     const signingKey =
-      process.env.TICKET_SIGNING_PRIVATE_KEY ||
+      process.env.TICKET_SIGNING_SECRET ||
       "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     for (const order of pending) {
