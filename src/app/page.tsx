@@ -1,3 +1,6 @@
+import Image from "next/image";
+import Link from "next/link";
+import { Download } from "lucide-react";
 import { Header } from "@/components/marketing/header";
 import { Hero } from "@/components/marketing/hero";
 import { WhyAttend } from "@/components/marketing/why-attend";
@@ -6,6 +9,8 @@ import { CtaBanner } from "@/components/marketing/cta-banner";
 import { DetailsCard } from "@/components/marketing/details-card";
 import { AboutPreview } from "@/components/marketing/about-preview";
 import { Footer } from "@/components/marketing/footer";
+import { Reveal } from "@/components/ui/reveal";
+import { Parallax } from "@/components/ui/parallax";
 import { SITE_CONFIG } from "@/config/site";
 
 export default function HomePage() {
@@ -18,9 +23,12 @@ export default function HomePage() {
       <Hero />
 
       {/* Why Attend Section with chamfered collage */}
-      <WhyAttend />
+      <Reveal>
+        <WhyAttend />
+      </Reveal>
 
       {/* Featured Ministers Section matching KILO instructor card layout */}
+      <Reveal>
       <section className="py-20 lg:py-24 bg-[#F8FAFC]">
         <div className="max-w-[1240px] mx-auto px-6 sm:px-8">
           <div className="text-center max-w-2xl mx-auto mb-14 space-y-2">
@@ -55,15 +63,70 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+      </Reveal>
 
       {/* CTA Banner with diagonal triangles */}
-      <CtaBanner />
+      <Reveal>
+        <CtaBanner />
+      </Reveal>
 
       {/* Conference Details Card */}
-      <DetailsCard />
+      <Reveal>
+        <DetailsCard />
+      </Reveal>
 
       {/* About Horemow Preview with layered video thumbnail */}
-      <AboutPreview />
+      <Reveal>
+        <AboutPreview />
+      </Reveal>
+
+      {/* Official Conference Flyer */}
+      <Reveal>
+      <section className="py-16 lg:py-20 bg-white">
+        <div className="max-w-[1240px] mx-auto px-6 sm:px-8">
+          <div className="bg-[#F8FAFC] rounded-[24px] border border-gray-100 overflow-hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-2 items-center">
+              <Parallax speed={0.15} className="relative aspect-[3/4] lg:aspect-auto lg:h-[480px] bg-[#0E1020]">
+                <Image
+                  src="/images/conference_flyer.png"
+                  alt="Official flyer for the International Holiness General Conference 2026"
+                  fill
+                  className="object-contain"
+                  sizes="(max-width: 1024px) 100vw, 50vw"
+                />
+              </Parallax>
+              <div className="p-8 sm:p-12 space-y-5">
+                <span className="text-xs font-bold uppercase tracking-widest text-[#0E7A6E]">
+                  Official Flyer
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-bold text-[#111320] tracking-tight">
+                  Spread the Word — Share the Flyer
+                </h2>
+                <p className="text-sm text-[#6B7280] leading-relaxed">
+                  Download the official International Holiness General Conference 2026 flyer and share it with your parish, cell groups, and social media. Registration is open now at ₦5,000 / $20 / €20 / £20.
+                </p>
+                <div className="flex flex-wrap items-center gap-4 pt-2">
+                  <a
+                    href="/images/conference_flyer.png"
+                    download="IHGC-2026-Flyer.png"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#0E1020] text-white font-bold text-sm hover:bg-[#1A1D36] transition-colors"
+                  >
+                    <Download className="w-4 h-4 text-[#8EE3D6]" />
+                    Download Flyer
+                  </a>
+                  <Link
+                    href="/conference"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-[#0E1020] text-[#0E1020] font-bold text-sm hover:bg-[#0E1020] hover:text-white transition-colors"
+                  >
+                    Conference Details
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      </Reveal>
 
       {/* Deep Navy Footer */}
       <Footer />

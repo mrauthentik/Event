@@ -8,32 +8,45 @@ import { formatMoneyMinor, SupportedCurrency } from "@/config/currencies";
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
+  let dbAvailable = true;
+
   // Aggregate attendee counts
-  const [totalAttendees] = await db.select({ value: count() }).from(attendees);
-  const [confirmedAttendees] = await db
-    .select({ value: count() })
-    .from(attendees)
-    .where(eq(attendees.status, "confirmed"));
-  const [checkedInAttendees] = await db
-    .select({ value: count() })
-    .from(attendees)
-    .where(eq(attendees.status, "checked_in"));
+  let totalAttendees: { value: number } | undefined;
+  let confirmedAttendees: { value: number } | undefined;
+  let checkedInAttendees: { value: number } | undefined;
+  let totalOrders: { value: number } | undefined;
+  let paidOrders: { value: number } | undefined;
+  let pendingOrders: { value: number } | undefined;
+  let paidOrdersList: any[] = [];
 
-  // Aggregate orders counts
-  const [totalOrders] = await db.select({ value: count() }).from(orders);
-  const [paidOrders] = await db
-    .select({ value: count() })
-    .from(orders)
-    .where(eq(orders.status, "paid"));
-  const [pendingOrders] = await db
-    .select({ value: count() })
-    .from(orders)
-    .where(eq(orders.status, "pending_payment"));
+  try {
+    [totalAttendees] = await db.select({ value: count() }).from(attendees);
+    [confirmedAttendees] = await db
+      .select({ value: count() })
+      .from(attendees)
+      .where(eq(attendees.status, "confirmed"));
+    [checkedInAttendees] = await db
+      .select({ value: count() })
+      .from(attendees)
+      .where(eq(attendees.status, "checked_in"));
 
-  // Revenue PER CURRENCY (Never sum different currencies!)
-  const paidOrdersList = await db.query.orders.findMany({
-    where: (o, { eq }) => eq(o.status, "paid"),
-  });
+    [totalOrders] = await db.select({ value: count() }).from(orders);
+    [paidOrders] = await db
+      .select({ value: count() })
+      .from(orders)
+      .where(eq(orders.status, "paid"));
+    [pendingOrders] = await db
+      .select({ value: count() })
+      .from(orders)
+      .where(eq(orders.status, "pending_payment"));
+
+    paidOrdersList = await db.query.orders.findMany({
+      where: (o, { eq }) => eq(o.status, "paid"),
+    });
+  } catch (err) {
+    dbAvailable = false;
+    console.error("[admin] dashboard DB unavailable:", err);
+  }
 
   const revenueByCurrency: Record<SupportedCurrency, number> = {
     NGN: 0,
@@ -63,6 +76,12 @@ export default async function AdminDashboardPage() {
           Real-time metrics for IHGC 2026 registration, revenue per currency, and gate capacity.
         </p>
       </div>
+
+      {!dbAvailable && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl px-4 py-3">
+          Database not connected — showing empty metrics. Set <code>DATABASE_URL</code> in <code>.env</code> and run <code>pnpm db:push</code>.
+        </div>
+      )}
 
       {/* Top 4 Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">

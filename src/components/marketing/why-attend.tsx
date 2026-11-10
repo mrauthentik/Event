@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ChevronRight } from "lucide-react";
+import { Parallax } from "@/components/ui/parallax";
 
 export function WhyAttend() {
   const points = [
@@ -72,25 +73,27 @@ export function WhyAttend() {
             <div className="absolute -top-4 -right-4 w-72 h-80 sm:w-96 sm:h-[420px] rounded-[32px] border-2 border-[#8EE3D6]/40 -z-0" />
 
             <div className="relative z-10 grid grid-cols-12 gap-4 w-full max-w-[500px]">
-              {/* Primary Main Image (Front Left) */}
-              <div className="col-span-8 relative aspect-[4/5] rounded-[24px] overflow-hidden shadow-xl">
+              {/* Primary Main Image: Official Conference Flyer (parallax layer) */}
+              <Parallax speed={0.12} className="col-span-8 relative aspect-[4/5] rounded-[24px] overflow-hidden shadow-xl bg-[#0E1020]">
                 <Image
-                  src="/images/crowd-bw_2.jpg"
-                  alt="Believers gathered in worship at Horemow Conference"
+                  src="/images/conference_flyer.png"
+                  alt="Official flyer for the International Holiness General Conference 2026"
                   fill
-                  className="object-cover"
+                  className="object-contain"
+                  sizes="(max-width: 1024px) 100vw, 50vw"
                 />
-              </div>
+              </Parallax>
 
-              {/* Secondary Layered Image (Top-Right with Chamfered Corner) */}
-              <div className="col-span-7 -ml-16 mt-16 sm:mt-24 relative aspect-square rounded-[20px] overflow-hidden shadow-2xl clip-chamfer-tr">
+              {/* Secondary Layered Image (Top-Right with Chamfered Corner, faster parallax) */}
+              <Parallax speed={0.22} className="col-span-7 -ml-16 mt-16 sm:mt-24 relative aspect-[3/4] rounded-[20px] overflow-hidden shadow-2xl clip-chamfer-tr bg-[#0E1020]">
                 <Image
-                  src="/images/crowd-bw_3.jpg"
-                  alt="Conference prayer session"
+                  src="/images/conference_flyer.png"
+                  alt="Conference flyer — Man and Satan in Contention Against the Holy God"
                   fill
-                  className="object-cover"
+                  className="object-contain"
+                  sizes="(max-width: 1024px) 100vw, 50vw"
                 />
-              </div>
+              </Parallax>
             </div>
           </div>
 

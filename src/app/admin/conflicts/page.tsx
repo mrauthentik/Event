@@ -6,17 +6,19 @@ import { AlertTriangle, CheckCircle2, ShieldCheck } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function AdminConflictsPage() {
-  const conflictScans = await db.query.scanEvents.findMany({
-    where: or(
-      eq(scanEvents.result, "conflict"),
-      eq(scanEvents.result, "already_checked_in"),
-      eq(scanEvents.result, "invalid_signature")
-    ),
-    orderBy: [desc(scanEvents.serverTimestamp)],
-    with: {
-      // join attendee if desired
-    },
-  });
+  let conflictScans: any[] = [];
+  try {
+    conflictScans = await db.query.scanEvents.findMany({
+      where: or(
+        eq(scanEvents.result, "conflict"),
+        eq(scanEvents.result, "already_checked_in"),
+        eq(scanEvents.result, "invalid_signature")
+      ),
+      orderBy: [desc(scanEvents.serverTimestamp)],
+    });
+  } catch (err) {
+    console.error("[admin/conflicts] DB unavailable:", err);
+  }
 
   return (
     <div className="space-y-6">

@@ -7,10 +7,15 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function AdminOrdersPage() {
-  const allOrders = await db.query.orders.findMany({
-    orderBy: [desc(orders.createdAt)],
-    limit: 50,
-  });
+  let allOrders: any[] = [];
+  try {
+    allOrders = await db.query.orders.findMany({
+      orderBy: [desc(orders.createdAt)],
+      limit: 50,
+    });
+  } catch (err) {
+    console.error("[admin/orders] DB unavailable:", err);
+  }
 
   return (
     <div className="space-y-6">

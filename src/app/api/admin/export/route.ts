@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { attendees, auditLog } from "@/db/schema";
 import { desc } from "drizzle-orm";
+import { requireRole } from "@/lib/auth/session";
 
 export async function GET(req: NextRequest) {
+  const user = await requireRole("admin");
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const allAttendees = await db.query.attendees.findMany({
       orderBy: [desc(attendees.createdAt)],

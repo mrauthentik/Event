@@ -121,6 +121,13 @@ export async function verifyTicketToken(
 
     return { isValid: true, payload };
   } catch (err: any) {
+    console.error("[verifyTicketToken] failed:", {
+      tokenPreview: tokenString.slice(0, 40),
+      tokenLength: tokenString.length,
+      pubKeyLength: publicKeyHex?.length,
+      pubKeyPreview: publicKeyHex?.slice(0, 16),
+      error: err?.message,
+    });
     return { isValid: false, error: err?.message || "Verification failed" };
   }
 }

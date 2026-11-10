@@ -6,10 +6,15 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function AdminAttendeesPage() {
-  const allAttendees = await db.query.attendees.findMany({
-    orderBy: [desc(attendees.createdAt)],
-    limit: 50,
-  });
+  let allAttendees: any[] = [];
+  try {
+    allAttendees = await db.query.attendees.findMany({
+      orderBy: [desc(attendees.createdAt)],
+      limit: 50,
+    });
+  } catch (err) {
+    console.error("[admin/attendees] DB unavailable:", err);
+  }
 
   return (
     <div className="space-y-6">

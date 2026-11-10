@@ -1,26 +1,40 @@
 import Link from "next/link";
 import Image from "next/image";
+import { redirect } from "next/navigation";
+import { getSessionUser } from "@/lib/auth/session";
+import { LogoutButton } from "@/components/ui/logout-button";
 import {
   LayoutDashboard,
   Receipt,
   Users,
   Download,
-  ScrollText,
-  Settings,
   ShieldCheck,
+  Settings,
+  CheckCircle2,
+  BookOpen,
+  AlertTriangle,
 } from "lucide-react";
 import { SITE_CONFIG } from "@/config/site";
 
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const user = await getSessionUser();
+  if (!user) {
+    redirect("/staff/login");
+  }
+
   const navItems = [
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { label: "Orders", href: "/admin/orders", icon: Receipt },
     { label: "Attendees", href: "/admin/attendees", icon: Users },
+    { label: "Approvals", href: "/admin/approvals", icon: CheckCircle2 },
+    { label: "Booklet Stock", href: "/admin/booklet-stock", icon: BookOpen },
+    { label: "Conflicts", href: "/admin/conflicts", icon: AlertTriangle },
     { label: "Reports & Export", href: "/admin/export", icon: Download },
+    { label: "Settings", href: "/admin/settings", icon: Settings },
   ];
 
   return (
@@ -58,12 +72,14 @@ export default function AdminLayout({
 
         {/* Footer in Sidebar */}
         <div className="p-4 border-t border-white/10 text-[11px] text-gray-400 space-y-1">
-          <div className="text-white font-semibold">Camp Operations Desk</div>
+          <div className="text-white font-semibold">{user.fullName}</div>
+          <div className="text-[#8EE3D6] font-bold uppercase tracking-wider">{user.role}</div>
           <div>Kwali, Abuja • Africa/Lagos</div>
-          <div className="pt-2">
+          <div className="pt-2 flex items-center justify-between">
             <Link href="/" className="text-[#8EE3D6] hover:underline text-[10px]">
               ← Public Site
             </Link>
+            <LogoutButton />
           </div>
         </div>
       </aside>

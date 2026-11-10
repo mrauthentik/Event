@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { orders, attendees, payments, webhookEvents } from "@/db/schema";
 import { createTicketToken } from "@/lib/crypto/ed25519";
+import { deliverTicket } from "@/lib/messaging";
 
 export async function POST(req: NextRequest) {
   try {
@@ -103,6 +104,18 @@ export async function POST(req: NextRequest) {
             .update(webhookEvents)
             .set({ processed: true, processedAt: new Date() })
             .where(eq(webhookEvents.providerEventId, eventId));
+
+          // Queue ticket delivery (SMS primary, email if provided) — non-blocking
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+          for (const att of atts) {
+            deliverTicket({
+              attendeeName: att.name,
+              refCode: order.reference,
+              phoneE164: att.phoneE164,
+              email: att.email || order.payerEmail,
+              ticketUrl: `${appUrl}/ticket/${order.reference}`,
+            }).catch((err) => console.error("Ticket delivery failed:", err));
+          }
         });
       }
     }

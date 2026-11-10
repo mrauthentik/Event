@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -30,10 +30,43 @@ export default function RegisterPage() {
   const [guardianName, setGuardianName] = useState("");
   const [guardianPhone, setGuardianPhone] = useState("");
   const [consent, setConsent] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
 
   // Status
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Load Cloudflare Turnstile script and render widget
+  useEffect(() => {
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (!siteKey) return;
+
+    const renderWidget = () => {
+      const w = (window as any).turnstile;
+      if (w && turnstileRef.current && !turnstileRef.current.hasChildNodes()) {
+        w.render(turnstileRef.current, {
+          sitekey: siteKey,
+          callback: (token: string) => setTurnstileToken(token),
+          "expired-callback": () => setTurnstileToken(null),
+          "error-callback": () => setTurnstileToken(null),
+          theme: "light",
+        });
+      }
+    };
+
+    if ((window as any).turnstile) {
+      renderWidget();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    script.async = true;
+    script.defer = true;
+    script.onload = renderWidget;
+    document.head.appendChild(script);
+  }, []);
 
   // Restore draft state from localStorage to prevent loss on dropped connection
   useEffect(() => {
@@ -98,6 +131,7 @@ export default function RegisterPage() {
           guardianPhone: isMinor ? guardianPhone : undefined,
           groupName: isGroup ? groupName : undefined,
           groupSeatsCount: isGroup ? seatsCount : 1,
+          turnstileToken: turnstileToken || undefined,
         }),
       });
 
@@ -446,6 +480,11 @@ export default function RegisterPage() {
                   .
                 </span>
               </label>
+            </div>
+
+            {/* Cloudflare Turnstile Bot Protection */}
+            <div className="pt-2">
+              <div ref={turnstileRef} className="min-h-[65px]" />
             </div>
 
             {/* Error Message */}

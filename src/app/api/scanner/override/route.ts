@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { attendees, auditLog, scanEvents } from "@/db/schema";
+import { requireRole } from "@/lib/auth/session";
 
 const SUPERVISOR_PIN = process.env.SUPERVISOR_PIN || "7788"; // Configurable supervisor PIN
 
 export async function POST(req: NextRequest) {
+  const user = await requireRole("supervisor");
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const { attendeeId, action, supervisorPin, reason, standId } = await req.json();
 

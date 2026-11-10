@@ -7,10 +7,15 @@ import { CheckCircle2, XCircle, ShieldAlert } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function AdminApprovalsPage() {
-  const pendingManuals = await db.query.orders.findMany({
-    where: (o, { eq }) => eq(o.status, "pending_payment"),
-    orderBy: [desc(orders.createdAt)],
-  });
+  let pendingManuals: any[] = [];
+  try {
+    pendingManuals = await db.query.orders.findMany({
+      where: (o, { eq }) => eq(o.status, "pending_payment"),
+      orderBy: [desc(orders.createdAt)],
+    });
+  } catch (err) {
+    console.error("[admin/approvals] DB unavailable:", err);
+  }
 
   return (
     <div className="space-y-6">

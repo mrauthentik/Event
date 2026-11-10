@@ -4,7 +4,10 @@ import Link from "next/link";
 import { Header } from "@/components/marketing/header";
 import { Footer } from "@/components/marketing/footer";
 import { QrView } from "@/components/ticket/qr-view";
+import { OrderQrCard } from "@/components/ticket/order-qr-card";
 import { db } from "@/db";
+import { groups } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { SITE_CONFIG } from "@/config/site";
 import { Calendar, MapPin, Printer, ShieldCheck, Share2 } from "lucide-react";
 import { createTicketToken } from "@/lib/crypto/ed25519";
@@ -38,6 +41,11 @@ export default async function TicketPage({
   const signingKey =
     process.env.TICKET_SIGNING_PRIVATE_KEY ||
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+  // Lookup group (if this is a group order) for dashboard link
+  const [group] = order.isGroup
+    ? await db.select().from(groups).where(eq(groups.orderId, order.id)).limit(1)
+    : [null];
 
   // Pre-generate tokens for display
   const ticketsWithTokens = await Promise.all(
@@ -159,6 +167,27 @@ export default async function TicketPage({
               </div>
             </div>
           ))}
+
+          {/* Order-level QR for express group check-in */}
+          <OrderQrCard orderReference={order.reference} isGroup={order.isGroup} />
+
+          {/* Group leader dashboard link */}
+          {group && (
+            <div className="bg-white rounded-[20px] border border-gray-200 p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-bold text-[#111320]">Group Management</div>
+                <div className="text-xs text-gray-500">
+                  Track claimed seats and share invite links with your group members.
+                </div>
+              </div>
+              <Link
+                href={`/group/dashboard/${group.managementToken}`}
+                className="px-5 py-2.5 rounded-full bg-[#0E1020] hover:bg-[#1A1D36] text-white text-xs font-bold transition-colors shrink-0"
+              >
+                Open Leader Dashboard →
+              </Link>
+            </div>
+          )}
 
           {/* Bottom Actions */}
           <div className="flex flex-wrap items-center justify-center gap-4 pt-4 print:hidden">

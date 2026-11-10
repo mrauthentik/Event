@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { attendees } from "@/db/schema";
 import { or, eq, ilike } from "drizzle-orm";
+import { requireRole } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const user = await requireRole("attendant");
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const q = req.nextUrl.searchParams.get("q");
 

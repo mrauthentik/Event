@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
 import { attendees, scanEvents, bookletStock } from "@/db/schema";
+import { requireRole } from "@/lib/auth/session";
 
 export async function POST(req: NextRequest) {
+  const user = await requireRole("attendant");
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { scans } = await req.json();
 

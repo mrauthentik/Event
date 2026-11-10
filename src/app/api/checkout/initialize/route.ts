@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { orders, attendees, groups, groupSeats, ticketTypes, ticketPrices } from "@/db/schema";
+import { orders, attendees, groups, groupSeats, ticketTypes, ticketPrices, eventSettings } from "@/db/schema";
+import { eq, and, ne, isNull, sql } from "drizzle-orm";
 import { CURRENCIES, SupportedCurrency } from "@/config/currencies";
 import { generateRefCode } from "@/lib/crypto/ref-code";
 import { getPaymentProvider } from "@/lib/payments";
+import { verifyTurnstileToken } from "@/lib/turnstile";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 const registrationSchema = z.object({
   currency: z.enum(["NGN", "USD", "EUR", "GBP"]),
@@ -38,12 +41,30 @@ const registrationSchema = z.object({
       })
     )
     .optional(),
+  // Cloudflare Turnstile bot-protection token
+  turnstileToken: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit: max 10 registration attempts per IP per 10 minutes
+    const ip = clientIp(req);
+    const rl = rateLimit(`checkout_init:${ip}`, 10, 10 * 60 * 1000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: `Too many attempts. Please try again in ${rl.retryAfterSeconds} seconds.` },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } }
+      );
+    }
+
     const body = await req.json();
     const validated = registrationSchema.parse(body);
+
+    // Bot protection: verify Cloudflare Turnstile token
+    const turnstile = await verifyTurnstileToken(validated.turnstileToken, ip);
+    if (!turnstile.success) {
+      return NextResponse.json({ error: turnstile.error }, { status: 403 });
+    }
 
     const currencyConfig = CURRENCIES[validated.currency as SupportedCurrency];
     if (!currencyConfig) {
@@ -59,6 +80,35 @@ export async function POST(req: NextRequest) {
     }
 
     const seatsCount = validated.isGroup ? validated.groupSeatsCount : 1;
+
+    // Capacity enforcement: count seats held by live orders (pending_payment + paid)
+    const [settings] = await db.select().from(eventSettings).limit(1);
+    if (settings?.capacityLimit) {
+      const liveOrders = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(attendees)
+        .innerJoin(orders, eq(attendees.orderId, orders.id))
+        .where(
+          and(
+            ne(orders.status, "expired"),
+            ne(orders.status, "failed"),
+            ne(orders.status, "refunded"),
+            isNull(attendees.deletedAt)
+          )
+        );
+      const held = liveOrders[0]?.count ?? 0;
+      if (held + seatsCount > settings.capacityLimit) {
+        const remaining = Math.max(0, settings.capacityLimit - held);
+        return NextResponse.json(
+          {
+            error: `Registration capacity reached. Only ${remaining} seat(s) remain.`,
+            capacityRemaining: remaining,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const totalMinor = seatsCount * currencyConfig.standardPriceMinor;
 
     // Generate unique order reference (HGC-XXXXXX)

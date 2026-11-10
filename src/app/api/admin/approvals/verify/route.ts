@@ -3,8 +3,13 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { orders, attendees, payments, auditLog } from "@/db/schema";
 import { createTicketToken } from "@/lib/crypto/ed25519";
+import { requireRole } from "@/lib/auth/session";
 
 export async function POST(req: NextRequest) {
+  const user = await requireRole("admin");
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const formData = await req.formData();
     const orderId = formData.get("orderId") as string;

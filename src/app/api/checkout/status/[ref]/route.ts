@@ -4,6 +4,8 @@ import { db } from "@/db";
 import { orders, attendees, payments } from "@/db/schema";
 import { getPaymentProvider } from "@/lib/payments";
 import { createTicketToken } from "@/lib/crypto/ed25519";
+import { deliverTicket } from "@/lib/messaging";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { SupportedCurrency } from "@/config/currencies";
 
 export async function GET(
@@ -14,6 +16,15 @@ export async function GET(
     const { ref } = await params;
     const searchParams = req.nextUrl.searchParams;
     const isMockSuccess = searchParams.get("mock_success") === "true";
+
+    // Rate limit: max 60 status polls per IP per 5 minutes
+    const rl = rateLimit(`checkout_status:${clientIp(req)}:${ref}`, 60, 5 * 60 * 1000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Too many status checks. Please wait a moment." },
+        { status: 429 }
+      );
+    }
 
     // Lookup order
     const order = await db.query.orders.findFirst({
@@ -108,6 +119,18 @@ export async function GET(
 
         return updated;
       });
+
+      // Queue ticket delivery (SMS primary, email if provided) — non-blocking
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      for (const att of confirmedAttendees) {
+        deliverTicket({
+          attendeeName: att.name,
+          refCode: order.reference,
+          phoneE164: att.phoneE164,
+          email: att.email || order.payerEmail,
+          ticketUrl: `${appUrl}/ticket/${order.reference}`,
+        }).catch((err) => console.error("Ticket delivery failed:", err));
+      }
 
       return NextResponse.json({
         status: "paid",

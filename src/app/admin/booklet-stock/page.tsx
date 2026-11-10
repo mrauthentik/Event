@@ -6,13 +6,18 @@ import { BookOpen, Layers, CheckCircle2, PackageCheck } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function AdminBookletStockPage() {
-  const [issuedTotal] = await db
-    .select({ value: count() })
-    .from(attendees)
-    .where(isNotNull(attendees.bookletIssuedAt));
+  let currentIssued = 0;
+  try {
+    const [issuedTotal] = await db
+      .select({ value: count() })
+      .from(attendees)
+      .where(isNotNull(attendees.bookletIssuedAt));
+    currentIssued = issuedTotal?.value || 0;
+  } catch (err) {
+    console.error("[admin/booklet-stock] DB unavailable:", err);
+  }
 
   const totalAllocatedBooklets = 12000;
-  const currentIssued = issuedTotal?.value || 0;
   const remaining = totalAllocatedBooklets - currentIssued;
 
   const defaultStands = [

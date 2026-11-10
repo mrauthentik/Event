@@ -3,8 +3,11 @@ import { db } from "@/db";
 import { orders, attendees, payments, scanEvents, ticketTypes } from "@/db/schema";
 import { generateRefCode } from "@/lib/crypto/ref-code";
 import { createTicketToken } from "@/lib/crypto/ed25519";
+import { requireRole } from "@/lib/auth/session";
 
 export async function POST(req: NextRequest) {
+  const user = await requireRole("attendant");
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { name, phone, state, parish, paymentMethod, tellerOrReceipt, standId } =
       await req.json();

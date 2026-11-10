@@ -35,6 +35,19 @@ export default function ResendTicketPage() {
         }
       }
 
+      // Otherwise submit to recovery endpoint (phone/email/ref) which
+      // reconciles pending payments with the gateway and resends tickets.
+      const payload: any = {};
+      if (clean.startsWith("HGC-")) payload.reference = clean;
+      else if (query.includes("@")) payload.email = query.trim();
+      else payload.phone = query.trim();
+
+      await fetch("/api/tickets/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
       // Generic response to prevent enumeration
       setSubmitted(true);
     } catch (err: any) {
