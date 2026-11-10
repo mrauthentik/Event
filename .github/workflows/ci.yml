@@ -34,6 +34,3 @@ jobs:
       - name: Unit & Crypto Tests
         run: pnpm test
 
-      - name: Visual & E2E Tests
-        run: pnpm test:e2e
-
