@@ -2,128 +2,115 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { orders, attendees, payments, webhookEvents } from "@/db/schema";
-import { createTicketToken } from "@/lib/crypto/ed25519";
+import { orders, webhookEvents } from "@/db/schema";
+import { paypal } from "@/lib/payments";
+import { fulfillVerifiedPayment } from "@/lib/payments/fulfill-order";
+import { createOrderAccessToken } from "@/lib/crypto/ed25519";
 import { deliverTicket } from "@/lib/messaging";
 
 export async function POST(req: NextRequest) {
+  const rawBody = await req.text();
+  if (!(await paypal.verifyWebhookSignature(rawBody, req.headers))) {
+    return NextResponse.json({ error: "Invalid webhook signature." }, { status: 401 });
+  }
+
+  let payload: any;
   try {
-    const rawBody = await req.text();
-    const payload = JSON.parse(rawBody);
+    payload = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "Malformed webhook payload." }, { status: 400 });
+  }
 
-    const eventType = payload.event_type;
-    const eventId = payload.id || `paypal_evt_${Date.now()}`;
+  const eventType = payload?.event_type;
+  const eventId = typeof payload?.id === "string" ? payload.id : "";
+  if (!eventType || !eventId) {
+    return NextResponse.json({ error: "Webhook event identifier is missing." }, { status: 400 });
+  }
 
-    // Record Webhook Event for Idempotency
-    const existing = await db.query.webhookEvents.findFirst({
-      where: (e, { eq }) => eq(e.providerEventId, eventId),
-    });
-
-    if (existing && existing.processed) {
-      return NextResponse.json({ received: true, idempotent: true });
-    }
-
-    if (!existing) {
-      await db.insert(webhookEvents).values({
+  try {
+    const [inserted] = await db
+      .insert(webhookEvents)
+      .values({
         provider: "paypal",
         eventType,
         providerEventId: eventId,
         payload,
         signatureValid: true,
         processed: false,
+      })
+      .onConflictDoNothing()
+      .returning({ id: webhookEvents.id });
+
+    if (!inserted) {
+      const existing = await db.query.webhookEvents.findFirst({
+        where: (event, { eq }) => eq(event.providerEventId, eventId),
       });
+      if (existing?.processed) return NextResponse.json({ received: true, idempotent: true });
     }
 
-    // Handle Payment Capture Completed
-    if (eventType === "PAYMENT.CAPTURE.COMPLETED") {
+    if (eventType === "CUSTOMER.DISPUTE.CREATED") {
+      const reference = String(payload.resource?.custom_id || payload.resource?.invoice_id || "");
+      if (reference) {
+        await db.update(orders).set({ disputed: true, updatedAt: new Date() })
+          .where(eq(orders.reference, reference));
+      }
+    } else if (eventType === "PAYMENT.CAPTURE.COMPLETED") {
       const capture = payload.resource;
-      const orderRef = capture.custom_id || capture.invoice_id || capture.purchase_units?.[0]?.reference_id;
+      const paypalOrderId = String(capture?.supplementary_data?.related_ids?.order_id || "");
+      if (!paypalOrderId || !capture?.id) {
+        await db.update(webhookEvents).set({ processed: true, processedAt: new Date(), error: "Capture is missing its PayPal order id." })
+          .where(eq(webhookEvents.providerEventId, eventId));
+        return NextResponse.json({ received: true, ignored: true });
+      }
 
-      if (orderRef) {
-        const order = await db.query.orders.findFirst({
-          where: (o, { eq }) => eq(o.reference, orderRef),
-        });
+      // Re-fetch the order and capture from PayPal before issuing any ticket.
+      const verification = await paypal.verifyPayment(paypalOrderId);
+      if (
+        !verification.isSuccessful ||
+        verification.isPending ||
+        verification.captureId !== String(capture.id) ||
+        !verification.orderReference
+      ) {
+        await db.update(webhookEvents).set({ processed: true, processedAt: new Date(), error: "PayPal verification did not match the completed capture." })
+          .where(eq(webhookEvents.providerEventId, eventId));
+        return NextResponse.json({ received: true, ignored: true });
+      }
 
-        if (order && order.status !== "paid") {
-          const signingKey = process.env.TICKET_SIGNING_SECRET || "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-          const amountValue = parseFloat(capture.amount?.value || "0");
-          const amountMinor = Math.round(amountValue * 100);
+      const order = await db.query.orders.findFirst({
+        where: (candidate, { eq }) => eq(candidate.reference, verification.orderReference!),
+      });
+      if (!order || verification.amountMinor !== order.totalMinor || verification.currency !== order.currency) {
+        await db.update(webhookEvents).set({ processed: true, processedAt: new Date(), error: "PayPal amount, currency, or order reference did not match." })
+          .where(eq(webhookEvents.providerEventId, eventId));
+        return NextResponse.json({ received: true, ignored: true });
+      }
 
-          await db.transaction(async (txDb) => {
-            await txDb
-              .update(orders)
-              .set({ status: "paid", updatedAt: new Date() })
-              .where(eq(orders.id, order.id));
-
-            await txDb.insert(payments).values({
-              orderId: order.id,
-              provider: "paypal",
-              providerRef: capture.id,
-              providerCaptureId: capture.id,
-              status: "completed",
-              currency: capture.amount?.currency_code || "USD",
-              amountMinor,
-              rawPayloadHash: crypto.createHash("sha256").update(rawBody).digest("hex"),
-            });
-
-            const atts = await txDb
-              .select()
-              .from(attendees)
-              .where(eq(attendees.orderId, order.id));
-
-            for (const att of atts) {
-              const { tokenHash } = await createTicketToken(att.id, signingKey);
-              await txDb
-                .update(attendees)
-                .set({
-                  status: "confirmed",
-                  qrTokenHash: tokenHash,
-                  updatedAt: new Date(),
-                })
-                .where(eq(attendees.id, att.id));
-            }
-
-            await txDb
-              .update(webhookEvents)
-              .set({ processed: true, processedAt: new Date() })
-              .where(eq(webhookEvents.providerEventId, eventId));
-
-            // Queue ticket delivery (SMS primary, email if provided) — non-blocking
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-            for (const att of atts) {
-              deliverTicket({
-                attendeeName: att.name,
-                refCode: order.reference,
-                phoneE164: att.phoneE164,
-                email: att.email || order.payerEmail,
-                ticketUrl: `${appUrl}/ticket/${order.reference}`,
-              }).catch((err) => console.error("Ticket delivery failed:", err));
-            }
-          });
+      const result = await fulfillVerifiedPayment({
+        orderId: order.id,
+        provider: "paypal",
+        verification,
+        rawPayloadHash: crypto.createHash("sha256").update(rawBody).digest("hex"),
+      });
+      if (result.fulfilled) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+        const accessToken = await createOrderAccessToken(order.id);
+        for (const attendee of result.attendees) {
+          deliverTicket({
+            attendeeName: attendee.name,
+            refCode: attendee.refCode,
+            phoneE164: attendee.phoneE164,
+            email: attendee.email || order.payerEmail,
+            ticketUrl: `${appUrl}/ticket/${order.reference}?access=${encodeURIComponent(accessToken)}`,
+          }).catch((error) => console.error("Ticket delivery failed:", error));
         }
       }
     }
 
-    // Handle Dispute / Chargeback created
-    if (eventType === "CUSTOMER.DISPUTE.CREATED") {
-      // Flag order as disputed in admin, do not auto-delete tickets
-      const dispute = payload.resource;
-      const customId = dispute.custom_id;
-      if (customId) {
-        await db
-          .update(orders)
-          .set({ disputed: true, updatedAt: new Date() })
-          .where(eq(orders.reference, customId));
-      }
-    }
-
+    await db.update(webhookEvents).set({ processed: true, processedAt: new Date() })
+      .where(eq(webhookEvents.providerEventId, eventId));
     return NextResponse.json({ received: true });
-  } catch (error: any) {
-    console.error("PayPal webhook error:", error);
-    return NextResponse.json(
-      { error: error?.message || "Webhook processing failed." },
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error("PayPal webhook processing failed:", error);
+    return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });
   }
 }
-

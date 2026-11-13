@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, UserPlus, CheckCircle2, AlertCircle, Banknote, CreditCard, QrCode } from "lucide-react";
-import { generateRefCode } from "@/lib/crypto/ref-code";
-import { createTicketToken } from "@/lib/crypto/ed25519";
+import { formatMoneyMinor } from "@/config/currencies";
 
 export default function WalkInRegistrationPage() {
   const [standId, setStandId] = useState("Gate A");
@@ -16,18 +15,35 @@ export default function WalkInRegistrationPage() {
   const [tellerOrReceipt, setTellerOrReceipt] = useState("");
   const [loading, setLoading] = useState(false);
   const [completedAttendee, setCompletedAttendee] = useState<any | null>(null);
+  const [completedTicketUrl, setCompletedTicketUrl] = useState<string | null>(null);
+  const [amountMinor, setAmountMinor] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const idempotencyKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/scanner/walk-in", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Unable to load the configured registration price.");
+        setAmountMinor(data.amountMinor);
+      })
+      .catch((reason: unknown) => {
+        setError(reason instanceof Error ? reason.message : "Unable to load the configured registration price.");
+      });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    idempotencyKey.current ||= crypto.randomUUID();
 
     try {
       const res = await fetch("/api/scanner/walk-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          idempotencyKey: idempotencyKey.current,
           standId,
           name,
           phone: phone.trim(),
@@ -44,6 +60,8 @@ export default function WalkInRegistrationPage() {
       }
 
       setCompletedAttendee(data.attendee);
+      setCompletedTicketUrl(data.ticketUrl);
+      setAmountMinor(data.amountMinor);
     } catch (err: any) {
       setError(err?.message || "An error occurred.");
     } finally {
@@ -57,6 +75,8 @@ export default function WalkInRegistrationPage() {
     setParish("");
     setTellerOrReceipt("");
     setCompletedAttendee(null);
+    setCompletedTicketUrl(null);
+    idempotencyKey.current = null;
     setError(null);
   };
 
@@ -85,7 +105,7 @@ export default function WalkInRegistrationPage() {
                 <span>Register & Check-in Walk-in Attendee</span>
               </h1>
               <p className="text-xs text-gray-500">
-                Collect flat fee (₦5,000), issue ticket pass, and record gate arrival in one flow.
+                Collect the configured fee, issue the ticket, and record gate arrival in one flow.
               </p>
             </div>
 
@@ -139,7 +159,7 @@ export default function WalkInRegistrationPage() {
 
               {/* Payment Method Selector */}
               <div className="space-y-1 pt-2">
-                <label className="font-semibold text-gray-700">Payment Collection (₦5,000 NGN) *</label>
+                <label className="font-semibold text-gray-700">Payment Collection ({amountMinor === null ? "loading price…" : `${formatMoneyMinor(amountMinor, "NGN")} NGN`}) *</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -151,7 +171,7 @@ export default function WalkInRegistrationPage() {
                     }`}
                   >
                     <Banknote className="w-4 h-4" />
-                    <span>Cash ₦5,000</span>
+                    <span>Cash {amountMinor === null ? "" : formatMoneyMinor(amountMinor, "NGN")}</span>
                   </button>
 
                   <button
@@ -193,10 +213,10 @@ export default function WalkInRegistrationPage() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || amountMinor === null}
                   className="w-full py-3.5 rounded-full bg-[#0E1020] hover:bg-[#1A1D36] text-white font-bold text-xs tracking-wide transition-all shadow-sm cursor-pointer disabled:opacity-50"
                 >
-                  {loading ? "Processing Gate Admission..." : "Collect ₦5,000 & Check In Immediately"}
+                  {loading ? "Processing Gate Admission..." : amountMinor === null ? "Loading Configured Price…" : `Collect ${formatMoneyMinor(amountMinor, "NGN")} & Check In`}
                 </button>
               </div>
             </form>
@@ -222,10 +242,18 @@ export default function WalkInRegistrationPage() {
             <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 text-left text-xs font-mono space-y-1 max-w-xs mx-auto">
               <div>Stand: <strong>{standId}</strong></div>
               <div>Status: <strong className="text-emerald-700">checked_in</strong></div>
-              <div>Payment: <strong>₦5,000 ({paymentMethod.toUpperCase()})</strong></div>
+              <div>Payment: <strong>{formatMoneyMinor(completedAttendee.amountMinor ?? amountMinor ?? 0, "NGN")} ({paymentMethod.toUpperCase()})</strong></div>
             </div>
 
             <div className="pt-2 space-y-3">
+              {completedTicketUrl && (
+                <Link
+                  href={completedTicketUrl}
+                  className="flex w-full items-center justify-center gap-2 rounded-full bg-[#EAF9F7] py-3 text-xs font-bold text-[#0E7A6E]"
+                >
+                  <QrCode className="h-4 w-4" /> Open Ticket QR
+                </Link>
+              )}
               <button
                 onClick={resetForm}
                 className="w-full py-3 rounded-full bg-[#0E1020] text-white font-bold text-xs shadow-sm cursor-pointer"

@@ -1,137 +1,97 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and, lt, ne, isNull } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import { db } from "@/db";
-import { orders, attendees, payments } from "@/db/schema";
-import { getPaymentProvider } from "@/lib/payments";
-import { CURRENCIES, SupportedCurrency } from "@/config/currencies";
-import { createTicketToken } from "@/lib/crypto/ed25519";
+import { attendees, orders, payments } from "@/db/schema";
+import { getPaymentProviderByName } from "@/lib/payments";
+import { fulfillVerifiedPayment } from "@/lib/payments/fulfill-order";
+import { createOrderAccessToken } from "@/lib/crypto/ed25519";
 import { deliverTicket } from "@/lib/messaging";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Scheduled maintenance job — call every 5 minutes via cron/Vercel Cron.
- * 1. Expires pending_payment orders past their expiresAt (releases capacity).
- * 2. Reconciles pending orders against the payment gateway.
- *
- * Auth: Authorization: Bearer <CRON_SECRET>
- */
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get("authorization");
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const results = { expired: 0, reconciled: 0, stillPending: 0, errors: 0 };
 
-  // ── 1. Expire stale pending orders ──────────────────────────────
   try {
-    const stale = await db
-      .select({ id: orders.id, reference: orders.reference })
+    const staleOrders = await db
+      .select({ id: orders.id })
       .from(orders)
-      .where(
-        and(
-          eq(orders.status, "pending_payment"),
-          lt(orders.expiresAt, new Date())
-        )
-      )
+      .where(and(eq(orders.status, "pending_payment"), lt(orders.expiresAt, new Date())))
       .limit(200);
 
-    for (const order of stale) {
+    for (const order of staleOrders) {
       await db.transaction(async (tx) => {
-        await tx
+        const [expired] = await tx
           .update(orders)
           .set({ status: "expired", updatedAt: new Date() })
-          .where(eq(orders.id, order.id));
-        // Release reserved seats
-        await tx
-          .update(attendees)
+          .where(and(eq(orders.id, order.id), eq(orders.status, "pending_payment")))
+          .returning({ id: orders.id });
+        if (!expired) return;
+        await tx.update(attendees)
           .set({ deletedAt: new Date(), updatedAt: new Date() })
           .where(and(eq(attendees.orderId, order.id), isNull(attendees.deletedAt)));
+        results.expired++;
       });
-      results.expired++;
     }
-  } catch (err) {
-    console.error("[cron] expiry failed:", err);
+  } catch (error) {
+    console.error("[cron] expiry failed:", error);
     results.errors++;
   }
 
-  // ── 2. Reconcile pending orders with gateways ───────────────────
   try {
-    const pending = await db
+    const pendingOrders = await db
       .select()
       .from(orders)
       .where(eq(orders.status, "pending_payment"))
       .limit(100);
 
-    const signingKey =
-      process.env.TICKET_SIGNING_SECRET ||
-      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
-    for (const order of pending) {
+    for (const order of pendingOrders) {
       try {
-        const provider = getPaymentProvider(order.currency as SupportedCurrency);
-        const verification = await provider.verifyPayment(order.reference);
+        const [payment] = await db.select().from(payments).where(eq(payments.orderId, order.id)).limit(1);
+        if (!payment || payment.provider === "manual_transfer") continue;
 
-        if (verification.isSuccessful) {
-          await db.transaction(async (tx) => {
-            await tx
-              .update(orders)
-              .set({ status: "paid", updatedAt: new Date() })
-              .where(eq(orders.id, order.id));
-
-            await tx.insert(payments).values({
-              orderId: order.id,
-              provider: order.currency === "NGN" ? "paystack" : "paypal",
-              providerRef: verification.providerRef || order.reference,
-              providerCaptureId: verification.providerRef || null,
-              status: "completed",
-              currency: order.currency,
-              amountMinor: verification.amountMinor || order.totalMinor,
-              rawPayloadHash: null,
-            });
-
-            const atts = await tx
-              .select()
-              .from(attendees)
-              .where(and(eq(attendees.orderId, order.id), isNull(attendees.deletedAt)));
-
-            for (const att of atts) {
-              const { tokenHash } = await createTicketToken(att.id, signingKey);
-              await tx
-                .update(attendees)
-                .set({ status: "confirmed", qrTokenHash: tokenHash, updatedAt: new Date() })
-                .where(eq(attendees.id, att.id));
-            }
+        const provider = getPaymentProviderByName(payment.provider === "paypal" ? "paypal" : "paystack");
+        const verification = await provider.verifyPayment(payment.providerRef);
+        if (
+          verification.isSuccessful &&
+          !verification.isPending &&
+          verification.amountMinor === order.totalMinor &&
+          verification.currency === order.currency
+        ) {
+          const result = await fulfillVerifiedPayment({
+            orderId: order.id,
+            provider: payment.provider === "paypal" ? "paypal" : "paystack",
+            verification,
           });
+          if (!result.fulfilled) continue;
 
-          // Deliver tickets (SMS/email) — non-blocking
-          const atts = await db
-            .select()
-            .from(attendees)
-            .where(and(eq(attendees.orderId, order.id), isNull(attendees.deletedAt)));
-          for (const att of atts) {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+          const accessToken = await createOrderAccessToken(order.id);
+          for (const attendee of result.attendees) {
             deliverTicket({
-              attendeeName: att.name,
-              refCode: att.refCode,
-              phoneE164: att.phoneE164,
-              email: att.email,
-              ticketUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/ticket/${order.reference}`,
+              attendeeName: attendee.name,
+              refCode: attendee.refCode,
+              phoneE164: attendee.phoneE164,
+              email: attendee.email || order.payerEmail,
+              ticketUrl: `${appUrl}/ticket/${order.reference}?access=${encodeURIComponent(accessToken)}`,
             }).catch(() => {});
           }
-
           results.reconciled++;
         } else if (verification.isPending) {
           results.stillPending++;
         }
-      } catch (err) {
-        console.error(`[cron] reconcile ${order.reference} failed:`, err);
+      } catch (error) {
+        console.error("[cron] payment reconciliation failed:", error);
         results.errors++;
       }
     }
-  } catch (err) {
-    console.error("[cron] reconciliation failed:", err);
+  } catch (error) {
+    console.error("[cron] reconciliation query failed:", error);
     results.errors++;
   }
 

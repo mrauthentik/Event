@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { MessageCircle, Phone, ArrowUpRight } from "lucide-react";
-import { FacebookIcon, YoutubeIcon } from "@/components/icons/social-icons";
+import { FacebookIcon, YoutubeIcon, XIcon } from "@/components/icons/social-icons";
 import { SITE_CONFIG } from "@/config/site";
 
 export function Footer() {
@@ -56,6 +56,17 @@ export function Footer() {
                 >
                   <FacebookIcon className="w-4 h-4 text-blue-400" />
                   <span>Facebook Page</span>
+                </a>
+              </li>
+              <li>
+                <a
+                  href={SITE_CONFIG.socials.x}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2.5 text-gray-400 hover:text-[#8EE3D6] transition-colors"
+                >
+                  <XIcon className="w-4 h-4" />
+                  <span>X</span>
                 </a>
               </li>
               <li>

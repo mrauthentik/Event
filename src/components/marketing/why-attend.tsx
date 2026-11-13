@@ -68,13 +68,13 @@ export function WhyAttend() {
           </div>
 
           {/* Right Column: Layered Collage with Chamfered Corner & Mint Frame */}
-          <div className="lg:col-span-6 relative flex justify-center lg:justify-end">
+          <div className="lg:col-span-6 relative flex min-w-0 justify-center lg:justify-end">
             {/* Mint outline frame background */}
-            <div className="absolute -top-4 -right-4 w-72 h-80 sm:w-96 sm:h-[420px] rounded-[32px] border-2 border-[#8EE3D6]/40 -z-0" />
+            <div className="absolute -top-4 right-0 sm:-right-4 w-72 h-80 sm:w-96 sm:h-[420px] rounded-[32px] border-2 border-[#8EE3D6]/40 -z-0" />
 
-            <div className="relative z-10 grid grid-cols-12 gap-4 w-full max-w-[500px]">
+            <div className="relative z-10 grid w-full max-w-[500px] grid-cols-12 items-start gap-3 sm:gap-4">
               {/* Primary Main Image: Official Conference Flyer (parallax layer) */}
-              <Parallax speed={0.12} className="col-span-8 relative aspect-[4/5] rounded-[24px] overflow-hidden shadow-xl bg-[#0E1020]">
+              <Parallax speed={0.18} className="col-span-8 col-start-1 relative aspect-[4/5] min-w-0 rounded-[24px] overflow-hidden shadow-xl bg-[#0E1020]">
                 <Image
                   src="/images/conference_flyer.png"
                   alt="Official flyer for the International Holiness General Conference 2026"
@@ -84,13 +84,13 @@ export function WhyAttend() {
                 />
               </Parallax>
 
-              {/* Secondary Layered Image (Top-Right with Chamfered Corner, faster parallax) */}
-              <Parallax speed={0.22} className="col-span-7 -ml-16 mt-16 sm:mt-24 relative aspect-[3/4] rounded-[20px] overflow-hidden shadow-2xl clip-chamfer-tr bg-[#0E1020]">
+              {/* Secondary worship photo with a chamfered corner */}
+              <Parallax speed={0.28} className="col-span-7 col-start-6 -ml-0 sm:-ml-16 mt-10 sm:mt-24 relative aspect-[3/4] min-w-0 rounded-[20px] overflow-hidden shadow-2xl clip-chamfer-tr bg-[#0E1020]">
                 <Image
-                  src="/images/conference_flyer.png"
-                  alt="Conference flyer — Man and Satan in Contention Against the Holy God"
+                  src="/images/crowd-bw.jpg"
+                  alt="Worshippers gathered for a conference service"
                   fill
-                  className="object-contain"
+                  className="object-cover"
                   sizes="(max-width: 1024px) 100vw, 50vw"
                 />
               </Parallax>

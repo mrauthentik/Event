@@ -19,7 +19,7 @@ type ParallaxProps = {
  * Give the child extra vertical bleed (e.g. -inset-y) so edges never show.
  * Respects prefers-reduced-motion.
  */
-export function Parallax({ children, speed = 0.2, className = "" }: ParallaxProps) {
+export function Parallax({ children, speed = 0.28, className = "" }: ParallaxProps) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -31,9 +31,9 @@ export function Parallax({ children, speed = 0.2, className = "" }: ParallaxProp
     const ctx = gsap.context(() => {
       gsap.fromTo(
         el,
-        { y: speed * 120 },
+        { y: speed * 190 },
         {
-          y: -speed * 120,
+          y: -speed * 190,
           ease: "none",
           scrollTrigger: {
             trigger: el,

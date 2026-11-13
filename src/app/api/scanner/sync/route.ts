@@ -1,97 +1,169 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/db";
-import { attendees, scanEvents, bookletStock } from "@/db/schema";
+import { attendees, orders, scanEvents } from "@/db/schema";
 import { requireRole } from "@/lib/auth/session";
+import { isSameOriginRequest } from "@/lib/security/origin";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
+
+const scanSchema = z.object({
+  attendeeId: z.string().uuid(),
+  scanType: z.enum(["arrival", "booklet"]),
+  standId: z.string().trim().min(1).max(64),
+  clientTimestamp: z.string().refine((value) => Number.isFinite(Date.parse(value))),
+  idempotencyKey: z.string().min(16).max(80),
+});
+const syncSchema = z.object({ scans: z.array(scanSchema).min(1).max(500) });
 
 export async function POST(req: NextRequest) {
+  if (!isSameOriginRequest(req)) {
+    return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  }
   const user = await requireRole("attendant");
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try {
-    const { scans } = await req.json();
+  const ip = clientIp(req);
+  const limit = await rateLimit(`scanner_sync:${user.id}:${ip}`, 120, 10 * 60 * 1000);
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Too many scanner sync requests. Try again shortly." }, {
+      status: 429,
+      headers: { "Retry-After": String(limit.retryAfterSeconds), "Cache-Control": "no-store" },
+    });
+  }
 
-    if (!Array.isArray(scans) || scans.length === 0) {
-      return NextResponse.json({ success: true, processedCount: 0 });
+  try {
+    const { scans } = syncSchema.parse(await req.json());
+    const now = new Date();
+    const parsed = scans.map((scan) => ({ ...scan, clientTime: new Date(scan.clientTimestamp) }));
+    if (parsed.some((scan) =>
+      scan.clientTime.getTime() > now.getTime() + 2 * 60 * 1000 ||
+      scan.clientTime.getTime() < now.getTime() - 30 * 24 * 60 * 60 * 1000
+    )) {
+      return NextResponse.json({ error: "A scan timestamp is outside the accepted time window." }, { status: 422 });
     }
 
     let processedCount = 0;
     let conflictsCount = 0;
+    let rejectedCount = 0;
 
     await db.transaction(async (tx) => {
-      for (const scan of scans) {
-        // 1. Check idempotency: has this specific scan idempotency key been processed?
-        const existingScan = await tx.query.scanEvents.findFirst({
-          where: eq(scanEvents.idempotencyKey, scan.idempotencyKey),
-        });
+      for (const scan of parsed) {
+        const idempotencyKey = `${user.id}:${scan.idempotencyKey}`;
+        const [existing] = await tx.select({ id: scanEvents.id })
+          .from(scanEvents)
+          .where(eq(scanEvents.idempotencyKey, idempotencyKey))
+          .limit(1);
+        if (existing) continue;
 
-        if (existingScan) {
-          continue; // Already processed
-        }
+        const [record] = await tx
+          .select({ attendee: attendees, orderStatus: orders.status })
+          .from(attendees)
+          .innerJoin(orders, eq(attendees.orderId, orders.id))
+          .where(eq(attendees.id, scan.attendeeId))
+          .for("update")
+          .limit(1);
 
-        const attendee = await tx.query.attendees.findFirst({
-          where: eq(attendees.id, scan.attendeeId),
-        });
-
-        if (!attendee) {
+        const attendee = record?.attendee;
+        if (!attendee || attendee.deletedAt || record.orderStatus !== "paid") {
+          rejectedCount++;
           continue;
         }
 
-        const clientTime = new Date(scan.clientTimestamp);
-
         if (scan.scanType === "arrival") {
-          // If already checked in
-          if (attendee.status === "checked_in" || attendee.status === "booklet_issued") {
-            conflictsCount++;
-            await tx.insert(scanEvents).values({
-              attendeeId: attendee.id,
-              scanType: "arrival",
-              standId: scan.standId,
-              clientTimestamp: clientTime,
-              idempotencyKey: scan.idempotencyKey,
-              result: "already_checked_in",
-              notes: `Attempted scan at ${scan.standId} but attendee was already checked in at ${attendee.checkedInAt?.toISOString()}`,
-            });
-          } else {
-            // Atomic check-in
-            await tx
-              .update(attendees)
-              .set({
-                status: "checked_in",
-                checkedInAt: clientTime,
-                updatedAt: new Date(),
-              })
-              .where(eq(attendees.id, attendee.id));
+          if (attendee.status === "unconfirmed") {
+            rejectedCount++;
+            continue;
+          }
+
+          const firstArrivalAt = attendee.checkedInAt;
+          if (!firstArrivalAt || scan.clientTime < firstArrivalAt) {
+            const [updated] = await tx.update(attendees).set({
+              status: attendee.bookletIssuedAt ? "booklet_issued" : "checked_in",
+              checkedInAt: scan.clientTime,
+              updatedAt: now,
+            }).where(and(
+              eq(attendees.id, attendee.id),
+              firstArrivalAt ? eq(attendees.checkedInAt, firstArrivalAt) : isNull(attendees.checkedInAt)
+            ))
+              .returning({ id: attendees.id });
+            if (!updated) throw new Error("Concurrent scan update; retry sync.");
+
+            if (firstArrivalAt) {
+              await tx.update(scanEvents).set({
+                result: "conflict",
+                notes: "An earlier offline arrival timestamp was synchronized later.",
+              }).where(and(
+                eq(scanEvents.attendeeId, attendee.id),
+                eq(scanEvents.scanType, "arrival"),
+                eq(scanEvents.result, "valid"),
+                gt(scanEvents.clientTimestamp, scan.clientTime)
+              ));
+            }
 
             await tx.insert(scanEvents).values({
               attendeeId: attendee.id,
               scanType: "arrival",
+              staffId: user.id,
               standId: scan.standId,
-              clientTimestamp: clientTime,
-              idempotencyKey: scan.idempotencyKey,
+              clientTimestamp: scan.clientTime,
+              idempotencyKey,
               result: "valid",
-              notes: `Checked in at stand ${scan.standId}`,
+              notes: "Arrival synchronized from an offline scanner.",
             });
             processedCount++;
+          } else {
+            await tx.insert(scanEvents).values({
+              attendeeId: attendee.id,
+              scanType: "arrival",
+              staffId: user.id,
+              standId: scan.standId,
+              clientTimestamp: scan.clientTime,
+              idempotencyKey,
+              result: "conflict",
+              notes: "A prior arrival was recorded with an earlier timestamp.",
+            });
+            conflictsCount++;
           }
-        } else if (scan.scanType === "booklet") {
-          // Issue booklet
-          await tx
-            .update(attendees)
-            .set({
-              status: "booklet_issued",
-              bookletIssuedAt: clientTime,
-              updatedAt: new Date(),
-            })
-            .where(eq(attendees.id, attendee.id));
+        } else {
+          if (!attendee.checkedInAt || attendee.bookletIssuedAt || scan.clientTime < attendee.checkedInAt) {
+            await tx.insert(scanEvents).values({
+              attendeeId: attendee.id,
+              scanType: "booklet",
+              staffId: user.id,
+              standId: scan.standId,
+              clientTimestamp: scan.clientTime,
+              idempotencyKey,
+              result: "conflict",
+              notes: attendee.bookletIssuedAt
+                ? "Booklet issue was already recorded."
+                : !attendee.checkedInAt
+                  ? "Booklet cannot be issued before check-in."
+                  : "Booklet timestamp precedes the attendee arrival timestamp.",
+            });
+            conflictsCount++;
+            continue;
+          }
+
+          const [updated] = await tx.update(attendees).set({
+            status: "booklet_issued",
+            bookletIssuedAt: scan.clientTime,
+            updatedAt: now,
+          }).where(and(
+            eq(attendees.id, attendee.id),
+            isNull(attendees.bookletIssuedAt),
+            isNotNull(attendees.checkedInAt)
+          )).returning({ id: attendees.id });
+          if (!updated) throw new Error("Concurrent booklet update; retry sync.");
 
           await tx.insert(scanEvents).values({
             attendeeId: attendee.id,
             scanType: "booklet",
+            staffId: user.id,
             standId: scan.standId,
-            clientTimestamp: clientTime,
-            idempotencyKey: scan.idempotencyKey,
+            clientTimestamp: scan.clientTime,
+            idempotencyKey,
             result: "valid",
-            notes: `Booklet issued at stand ${scan.standId}`,
+            notes: "Booklet issuance synchronized from an offline scanner.",
           });
           processedCount++;
         }
@@ -102,14 +174,14 @@ export async function POST(req: NextRequest) {
       success: true,
       processedCount,
       conflictsCount,
+      rejectedCount,
       serverTimestamp: new Date().toISOString(),
-    });
-  } catch (error: any) {
-    console.error("Scanner sync error:", error);
-    return NextResponse.json(
-      { error: error?.message || "Failed to process scanner sync." },
-      { status: 500 }
-    );
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: "Invalid scan sync payload." }, { status: 422 });
+    }
+    console.error("Scanner sync failed:", error);
+    return NextResponse.json({ error: "Failed to process scanner sync." }, { status: 500 });
   }
 }
-

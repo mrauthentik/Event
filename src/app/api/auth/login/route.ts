@@ -1,85 +1,78 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
+import crypto from "node:crypto";
 import { db } from "@/db";
-import { staffUsers } from "@/db/schema";
+import { sessions, staffUsers } from "@/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
-import crypto from "node:crypto";
+import { isSameOriginRequest } from "@/lib/security/origin";
 
 const loginSchema = z.object({
-  username: z.string().min(1),
-  password: z.string().min(1),
+  username: z.string().trim().min(1).max(64),
+  password: z.string().min(1).max(1024),
 });
 
-// Short-lived TOTP challenge tokens (5 min), stored in memory.
-// For multi-instance deployments move to Redis.
-const totpChallenges = new Map<string, { userId: string; expiresAt: number }>();
-
 export async function POST(req: NextRequest) {
+  if (!isSameOriginRequest(req)) {
+    return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  }
   const ip = clientIp(req);
-  const rl = rateLimit(`auth_login:${ip}`, 10, 10 * 60 * 1000);
-  if (!rl.allowed) {
+  const ipLimit = await rateLimit(`auth_login:${ip}`, 10, 10 * 60 * 1000);
+  if (!ipLimit.allowed) {
     return NextResponse.json(
-      { error: `Too many login attempts. Try again in ${rl.retryAfterSeconds}s.` },
-      { status: 429 }
+      { error: "Too many login attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(ipLimit.retryAfterSeconds) } }
     );
   }
 
   try {
     const { username, password } = loginSchema.parse(await req.json());
+    const normalizedUsername = username.toLowerCase();
+    const userLimit = await rateLimit(`auth_login_user:${normalizedUsername}`, 8, 10 * 60 * 1000);
+    if (!userLimit.allowed) return NextResponse.json({ error: "Too many login attempts." }, { status: 429 });
 
-    const [user] = await db
-      .select()
-      .from(staffUsers)
-      .where(eq(staffUsers.username, username.trim().toLowerCase()))
-      .limit(1);
-
-    // Generic error to prevent user enumeration
+    const [user] = await db.select().from(staffUsers)
+      .where(eq(staffUsers.username, normalizedUsername)).limit(1);
     const invalid = { error: "Invalid username or password." };
-
-    if (!user || !user.isActive) {
+    if (!user || !user.isActive || !(await verifyPassword(password, user.passwordHash))) {
       return NextResponse.json(invalid, { status: 401 });
     }
 
-    const ok = await verifyPassword(password, user.passwordHash);
-    if (!ok) {
-      return NextResponse.json(invalid, { status: 401 });
+    const requiresTotp = user.role === "admin" || user.role === "finance";
+    if (requiresTotp && (!user.totpEnabled || !user.totpSecret)) {
+      return NextResponse.json(
+        { error: "Authenticator access must be provisioned by the system administrator." },
+        { status: 403, headers: { "Cache-Control": "no-store" } }
+      );
     }
 
-    // If TOTP is enabled, issue a short-lived challenge instead of a session
-    if (user.totpEnabled && user.totpSecret) {
+    if (requiresTotp) {
       const challenge = crypto.randomBytes(24).toString("hex");
-      totpChallenges.set(challenge, {
+      await db.insert(sessions).values({
+        id: challenge,
         userId: user.id,
-        expiresAt: Date.now() + 5 * 60 * 1000,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+        revoked: true,
       });
-      return NextResponse.json({ requiresTotp: true, challenge });
+      return NextResponse.json({
+        requiresTotp: true,
+        challenge,
+      }, { headers: { "Cache-Control": "no-store" } });
     }
 
-    // No TOTP — create session directly
     const { createSession, setSessionCookie } = await import("@/lib/auth/session");
     const sessionId = await createSession(user.id);
     await setSessionCookie(sessionId);
-
     return NextResponse.json({
       success: true,
       user: { id: user.id, fullName: user.fullName, username: user.username, role: user.role },
-    });
-  } catch (error: any) {
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Username and password are required." }, { status: 422 });
     }
-    console.error("Login error:", error);
+    console.error("Login failed:", error);
     return NextResponse.json({ error: "Login failed." }, { status: 500 });
   }
-}
-
-/** Exported for the TOTP verify route. */
-export function consumeTotpChallenge(challenge: string): string | null {
-  const entry = totpChallenges.get(challenge);
-  if (!entry) return null;
-  totpChallenges.delete(challenge);
-  if (entry.expiresAt < Date.now()) return null;
-  return entry.userId;
 }

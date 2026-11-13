@@ -21,8 +21,9 @@ export const SITE_CONFIG = {
     email: null, // Dynamic: null until configured, never hardcode fake email
   },
   socials: {
-    youtube: "https://www.youtube.com/",
-    facebook: "https://www.facebook.com/pastorpaulrika",
+    youtube: "https://www.youtube.com/@pastorpaulrika1",
+    facebook: "https://facebook.com/pastorpaulrika",
+    x: "https://x.com/pastorpaulrika",
   },
   logo: {
     src: "/images/horemow_logo.png",

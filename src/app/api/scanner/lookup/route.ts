@@ -1,52 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
+import { and, eq, ilike, isNull, or } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/db";
-import { attendees } from "@/db/schema";
-import { or, eq, ilike } from "drizzle-orm";
+import { attendees, orders } from "@/db/schema";
 import { requireRole } from "@/lib/auth/session";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const user = await requireRole("attendant");
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try {
-    const q = req.nextUrl.searchParams.get("q");
-
-    if (!q || q.trim().length === 0) {
-      return NextResponse.json({ attendee: null });
-    }
-
-    const cleanQuery = q.trim();
-
-    const attendee = await db.query.attendees.findFirst({
-      where: or(
-        eq(attendees.refCode, cleanQuery.toUpperCase()),
-        eq(attendees.phoneE164, cleanQuery),
-        ilike(attendees.name, `%${cleanQuery}%`)
-      ),
+  const ip = clientIp(req);
+  const limit = await rateLimit(`scanner_lookup:${user.id}:${ip}`, 60, 60 * 1000);
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Too many lookups. Try again shortly." }, {
+      status: 429,
+      headers: { "Retry-After": String(limit.retryAfterSeconds), "Cache-Control": "no-store" },
     });
+  }
 
-    if (!attendee) {
-      return NextResponse.json({ attendee: null });
-    }
+  const parsed = z.string().trim().min(1).max(100).safeParse(req.nextUrl.searchParams.get("q"));
+  if (!parsed.success) {
+    return NextResponse.json({ attendee: null }, { headers: { "Cache-Control": "no-store" } });
+  }
+  const query = parsed.data;
+  const escapedPrefix = query.replace(/[\\%_]/g, "\\$&");
 
+  try {
+    const [result] = await db.select({ attendee: attendees })
+      .from(attendees)
+      .innerJoin(orders, eq(attendees.orderId, orders.id))
+      .where(and(
+        eq(orders.status, "paid"),
+        isNull(attendees.deletedAt),
+        or(
+          eq(attendees.refCode, query.toUpperCase()),
+          eq(attendees.phoneE164, query.replace(/[\s()-]/g, "")),
+          ilike(attendees.name, `${escapedPrefix}%`),
+        ),
+      ))
+      .limit(1);
+
+    if (!result) return NextResponse.json({ attendee: null }, { headers: { "Cache-Control": "no-store" } });
+    const attendee = result.attendee;
     return NextResponse.json({
       attendee: {
         id: attendee.id,
         refCode: attendee.refCode,
         name: attendee.name,
-        phoneE164: attendee.phoneE164,
-        country: attendee.country,
-        state: attendee.state,
-        parish: attendee.parish,
         status: attendee.status,
         checkedInAt: attendee.checkedInAt?.toISOString() || null,
         bookletIssuedAt: attendee.bookletIssuedAt?.toISOString() || null,
       },
-    });
-  } catch (err: any) {
-    console.error("Lookup error:", err);
-    return NextResponse.json({ error: "Lookup failed" }, { status: 500 });
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    console.error("Scanner lookup failed.");
+    return NextResponse.json({ error: "Lookup failed." }, { status: 500 });
   }
 }
-

@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { Globe, Sparkles } from "lucide-react";
-import { FacebookIcon, YoutubeIcon } from "@/components/icons/social-icons";
+import { FacebookIcon, YoutubeIcon, XIcon } from "@/components/icons/social-icons";
 
 export interface MinisterProps {
   name: string;
@@ -10,6 +10,7 @@ export interface MinisterProps {
   socials?: {
     youtube?: string;
     facebook?: string;
+    x?: string;
     website?: string;
   };
 }
@@ -63,6 +64,17 @@ export function MinisterCard({ name, role, bio, image, socials }: MinisterProps)
               className="w-8 h-8 rounded-full border border-gray-200 hover:border-[#8EE3D6] hover:bg-[#EAF9F7] text-gray-500 hover:text-[#0E1020] flex items-center justify-center transition-colors"
             >
               <FacebookIcon className="w-3.5 h-3.5" />
+            </a>
+          )}
+          {socials?.x && (
+            <a
+              href={socials.x}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${name} X`}
+              className="w-8 h-8 rounded-full border border-gray-200 hover:border-[#8EE3D6] hover:bg-[#EAF9F7] text-gray-500 hover:text-[#0E1020] flex items-center justify-center transition-colors"
+            >
+              <XIcon className="w-3.5 h-3.5" />
             </a>
           )}
           <span className="text-xs text-gray-400 font-medium pl-1">

@@ -57,13 +57,13 @@ export default function CampInfoPage() {
               <div className="flex items-start gap-2">
                 <Home className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Lodging:</strong> Hotels, motels, and private guesthouses are available within Kwali town and nearby Gwagwalada (approx. 20–25 minutes drive).
+                  <strong>Lodging:</strong> Attendees are responsible for arranging their own accommodation. No lodging options have been confirmed by the organizers yet.
                 </div>
               </div>
               <div className="flex items-start gap-2">
                 <Utensils className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Meals:</strong> Registered food vendors and refreshment stands will be operating on the campground throughout the conference.
+                  <strong>Meals:</strong> Meals are not included in registration. Attendees should arrange their own food.
                 </div>
               </div>
             </div>

@@ -1,140 +1,128 @@
-/**
- * Ticket token signing/verification using HMAC-SHA256 (Web Crypto).
- *
- * NOTE: filename kept as `ed25519.ts` for import compatibility — the
- * implementation is now symmetric HMAC, not Ed25519. The QR payload format
- * is unchanged: `base64url(payloadJson).base64url(signature)`.
- *
- * Server signs with TICKET_SIGNING_SECRET (private).
- * Scanner verifies with NEXT_PUBLIC_TICKET_VERIFYING_SECRET (embedded in bundle).
- */
+import { getPublicKeyAsync, signAsync, verifyAsync } from "@noble/ed25519";
 
 export interface SignedTicketPayload {
   version: number;
   attendeeId: string;
-  nonce: string; // 128-bit hex
+  nonce: string;
 }
 
-/**
- * Encodes a byte array to base64url without padding.
- */
+interface SignedOrderAccessPayload {
+  version: 1;
+  purpose: "ticket-access";
+  orderId: string;
+}
+
 export function bytesToBase64Url(bytes: Uint8Array): string {
-  const binary = Array.from(bytes).map((b) => String.fromCharCode(b)).join("");
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/**
- * Decodes a base64url string to Uint8Array.
- */
-export function base64UrlToBytes(str: string): Uint8Array {
-  let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
-  while (base64.length % 4) {
-    base64 += "=";
-  }
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
+export function base64UrlToBytes(value: string): Uint8Array {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("Invalid base64url value");
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-/**
- * Computes sha256 hex hash of a string.
- */
+function hexToBytes(value: string): Uint8Array {
+  const normalized = value.trim().replace(/^0x/i, "");
+  if (!/^[a-f\d]{64}$/i.test(normalized)) {
+    throw new Error("Ticket signing and verification keys must be 32-byte hex values.");
+  }
+  return Uint8Array.from(normalized.match(/.{2}/g)!, (byte) => parseInt(byte, 16));
+}
+
+export function getTicketSigningKey(): string {
+  const key = process.env.TICKET_SIGNING_PRIVATE_KEY;
+  if (!key) throw new Error("TICKET_SIGNING_PRIVATE_KEY is not configured.");
+  hexToBytes(key);
+  return key;
+}
+
+export function getTicketVerifyingKey(): string {
+  const key = process.env.NEXT_PUBLIC_TICKET_VERIFYING_PUBLIC_KEY;
+  if (!key) throw new Error("NEXT_PUBLIC_TICKET_VERIFYING_PUBLIC_KEY is not configured.");
+  hexToBytes(key);
+  return key;
+}
+
 export async function sha256Hex(data: string): Promise<string> {
-  const enc = new TextEncoder().encode(data);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", enc);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+  return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function randomNonceHex(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function importHmacKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"]
-  );
-}
-
-/**
- * Issues an opaque, tamper-proof ticket token.
- * Contains no PII. `secret` is the shared HMAC secret.
- */
 export async function createTicketToken(
   attendeeId: string,
-  secret: string
+  privateKeyHex: string
 ): Promise<{ tokenString: string; tokenHash: string }> {
   const payload: SignedTicketPayload = {
     version: 1,
     attendeeId,
-    nonce: randomNonceHex(),
+    nonce: bytesToBase64Url(crypto.getRandomValues(new Uint8Array(16))),
   };
-
   const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
-  const key = await importHmacKey(secret);
-  const signature = await crypto.subtle.sign("HMAC", key, payloadBytes);
-
-  const tokenString = `${bytesToBase64Url(payloadBytes)}.${bytesToBase64Url(new Uint8Array(signature))}`;
-  const tokenHash = await sha256Hex(tokenString);
-
-  return { tokenString, tokenHash };
+  const signature = await signAsync(payloadBytes, hexToBytes(privateKeyHex));
+  const tokenString = `${bytesToBase64Url(payloadBytes)}.${bytesToBase64Url(signature)}`;
+  return { tokenString, tokenHash: await sha256Hex(tokenString) };
 }
 
-/** Constant-time byte comparison. */
-function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
+export async function createOrderAccessToken(orderId: string, privateKeyHex = getTicketSigningKey()): Promise<string> {
+  const payload: SignedOrderAccessPayload = { version: 1, purpose: "ticket-access", orderId };
+  const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
+  const signature = await signAsync(payloadBytes, hexToBytes(privateKeyHex));
+  return `${bytesToBase64Url(payloadBytes)}.${bytesToBase64Url(signature)}`;
 }
 
-/**
- * Verifies a ticket token offline using the shared HMAC secret.
- */
+export async function verifyOrderAccessToken(
+  token: string,
+  orderId: string,
+  publicKeyHex = getTicketVerifyingKey()
+): Promise<boolean> {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 2 || parts[0].length > 512) return false;
+    const payloadBytes = base64UrlToBytes(parts[0]);
+    const signature = base64UrlToBytes(parts[1]);
+    if (signature.length !== 64) return false;
+    if (!(await verifyAsync(signature, payloadBytes, hexToBytes(publicKeyHex)))) return false;
+    const payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payloadBytes));
+    return payload?.version === 1 && payload?.purpose === "ticket-access" && payload?.orderId === orderId;
+  } catch {
+    return false;
+  }
+}
+
 export async function verifyTicketToken(
   tokenString: string,
-  secret: string
+  publicKeyHex: string
 ): Promise<{ isValid: boolean; payload?: SignedTicketPayload; error?: string }> {
   try {
     const parts = tokenString.split(".");
-    if (parts.length !== 2) {
-      return { isValid: false, error: "Malformed token structure" };
-    }
+    if (parts.length !== 2) return { isValid: false, error: "Malformed token structure" };
 
     const payloadBytes = base64UrlToBytes(parts[0]);
-    const signatureBytes = base64UrlToBytes(parts[1]);
+    const signature = base64UrlToBytes(parts[1]);
+    if (signature.length !== 64) return { isValid: false, error: "Invalid signature length" };
+    const valid = await verifyAsync(signature, payloadBytes, hexToBytes(publicKeyHex));
+    if (!valid) return { isValid: false, error: "Invalid signature (forged ticket)" };
 
-    const key = await importHmacKey(secret);
-    const valid = await crypto.subtle.verify(
-      "HMAC",
-      key,
-      signatureBytes as Uint8Array<ArrayBuffer>,
-      payloadBytes as Uint8Array<ArrayBuffer>
-    );
-    if (!valid) {
-      return { isValid: false, error: "Invalid signature (forged ticket)" };
-    }
-
-    const payloadText = new TextDecoder().decode(payloadBytes);
-    const payload: SignedTicketPayload = JSON.parse(payloadText);
-
-    if (payload.version !== 1 || !payload.attendeeId || !payload.nonce) {
+    const payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payloadBytes));
+    if (
+      !payload ||
+      payload.version !== 1 ||
+      typeof payload.attendeeId !== "string" ||
+      typeof payload.nonce !== "string"
+    ) {
       return { isValid: false, error: "Invalid payload schema" };
     }
-
-    return { isValid: true, payload };
-  } catch (err: any) {
-    console.error("[verifyTicketToken] threw:", err);
-    return { isValid: false, error: err?.message || "Verification failed" };
+    return { isValid: true, payload: payload as SignedTicketPayload };
+  } catch {
+    return { isValid: false, error: "Malformed or unverifiable ticket" };
   }
+}
+
+export async function deriveTicketPublicKey(privateKeyHex: string): Promise<string> {
+  return Array.from(await getPublicKeyAsync(hexToBytes(privateKeyHex)))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }

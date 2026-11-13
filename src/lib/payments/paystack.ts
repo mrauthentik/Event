@@ -10,7 +10,7 @@ export class PaystackProvider implements PaymentProvider {
   private secretKey: string;
 
   constructor() {
-    this.secretKey = process.env.PAYSTACK_SECRET_KEY || "sk_test_mock_paystack_secret";
+    this.secretKey = process.env.PAYSTACK_SECRET_KEY || "";
   }
 
   async initializeCheckout(params: InitializeCheckoutParams): Promise<CheckoutSessionResult> {
@@ -34,13 +34,17 @@ export class PaystackProvider implements PaymentProvider {
     };
 
     // If mock/sandbox key without live network
-    if (this.secretKey.startsWith("sk_test_mock") || process.env.MOCK_PAYMENTS === "true") {
+    if (process.env.MOCK_PAYMENTS === "true" && process.env.NODE_ENV !== "production") {
       return {
         provider: "paystack",
-        checkoutUrl: `/payment/status?ref=${params.orderReference}&mock_success=true`,
+        checkoutUrl: `/payment/status?ref=${params.orderReference}`,
         providerRef: params.orderReference,
         rawPayload: { mock: true },
       };
+    }
+
+    if (!this.secretKey || this.secretKey.startsWith("sk_test_mock")) {
+      throw new Error("Paystack is not configured with a valid secret key.");
     }
 
     const response = await fetch("https://api.paystack.co/transaction/initialize", {
@@ -66,13 +70,14 @@ export class PaystackProvider implements PaymentProvider {
   }
 
   async verifyPayment(providerRef: string): Promise<VerifyPaymentResult> {
-    if (this.secretKey.startsWith("sk_test_mock") || process.env.MOCK_PAYMENTS === "true") {
+    if (!this.secretKey || this.secretKey.startsWith("sk_test_mock")) {
       return {
-        isSuccessful: true,
-        isPending: false,
+        isSuccessful: false,
+        isPending: true,
         providerRef,
-        amountMinor: 500_000,
+        amountMinor: 0,
         currency: "NGN",
+        error: "Paystack is not configured.",
       };
     }
 
@@ -109,9 +114,9 @@ export class PaystackProvider implements PaymentProvider {
     };
   }
 
-  verifyWebhookSignature(rawBody: string, headers: Record<string, string | string[] | undefined>): boolean {
-    const signature = headers["x-paystack-signature"];
-    if (!signature || typeof signature !== "string") {
+  async verifyWebhookSignature(rawBody: string, headers: Headers): Promise<boolean> {
+    const signature = headers.get("x-paystack-signature");
+    if (!signature || !this.secretKey || this.secretKey.startsWith("sk_test_mock")) {
       return false;
     }
 
@@ -120,7 +125,9 @@ export class PaystackProvider implements PaymentProvider {
       .update(rawBody)
       .digest("hex");
 
-    return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature));
+    const expected = Buffer.from(hash, "hex");
+    const actual = Buffer.from(signature, "hex");
+    return actual.length === expected.length && crypto.timingSafeEqual(expected, actual);
   }
 }
 

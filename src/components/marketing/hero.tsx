@@ -3,6 +3,7 @@ import { Calendar } from "lucide-react";
 import { Countdown } from "@/components/ui/countdown";
 import { HeroBackground } from "@/components/marketing/hero-background";
 import { SITE_CONFIG } from "@/config/site";
+import { Reveal } from "@/components/ui/reveal";
 
 export function Hero() {
   return (
@@ -16,7 +17,7 @@ export function Hero() {
         <div className="hidden lg:block lg:col-span-5" />
 
         {/* Right Column: Date, H1, Countdown, Pill Button */}
-        <div className="lg:col-span-7 flex flex-col items-start space-y-6 sm:space-y-8 text-left">
+        <Reveal animateOnMount direction="right" className="lg:col-span-7 flex flex-col items-start space-y-6 sm:space-y-8 text-left">
           
           {/* Calendar Badge */}
           <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold tracking-wider uppercase text-gray-300 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-full backdrop-blur-sm">
@@ -48,7 +49,7 @@ export function Hero() {
               Register Now
             </Link>
           </div>
-        </div>
+        </Reveal>
       </div>
     </section>
   );

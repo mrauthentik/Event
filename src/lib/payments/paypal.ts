@@ -11,8 +11,8 @@ export class PayPalProvider implements PaymentProvider {
   private baseUrl: string;
 
   constructor() {
-    this.clientId = process.env.PAYPAL_CLIENT_ID || "mock_paypal_client_id";
-    this.clientSecret = process.env.PAYPAL_CLIENT_SECRET || "mock_paypal_client_secret";
+    this.clientId = process.env.PAYPAL_CLIENT_ID || "";
+    this.clientSecret = process.env.PAYPAL_CLIENT_SECRET || "";
     this.baseUrl =
       process.env.PAYPAL_ENVIRONMENT === "live"
         ? "https://api-m.paypal.com"
@@ -20,6 +20,9 @@ export class PayPalProvider implements PaymentProvider {
   }
 
   private async getAccessToken(): Promise<string> {
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error("PayPal is not configured with client credentials.");
+    }
     const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
     const response = await fetch(`${this.baseUrl}/v1/oauth2/token`, {
       method: "POST",
@@ -39,10 +42,10 @@ export class PayPalProvider implements PaymentProvider {
 
   async initializeCheckout(params: InitializeCheckoutParams): Promise<CheckoutSessionResult> {
     // If mock credentials or local development
-    if (this.clientId.startsWith("mock") || process.env.MOCK_PAYMENTS === "true") {
+    if (process.env.MOCK_PAYMENTS === "true" && process.env.NODE_ENV !== "production") {
       return {
         provider: "paypal",
-        checkoutUrl: `/payment/status?ref=${params.orderReference}&mock_success=true`,
+        checkoutUrl: `/payment/status?ref=${params.orderReference}`,
         providerRef: `PAYPAL-${params.orderReference}`,
         rawPayload: { mock: true },
       };
@@ -50,6 +53,11 @@ export class PayPalProvider implements PaymentProvider {
 
     const token = await this.getAccessToken();
     const majorAmount = (params.amountMinor / 100).toFixed(2);
+    const returnUrl = new URL(params.callbackUrl);
+    returnUrl.searchParams.set("ref", params.orderReference);
+    const cancelUrl = new URL(params.callbackUrl);
+    cancelUrl.searchParams.set("ref", params.orderReference);
+    cancelUrl.searchParams.set("cancelled", "true");
 
     const payload = {
       intent: "CAPTURE",
@@ -57,7 +65,8 @@ export class PayPalProvider implements PaymentProvider {
         {
           reference_id: params.orderReference,
           description: `IHGC 2026 Registration (${params.orderReference})`,
-          custom_id: params.orderId,
+          custom_id: params.orderReference,
+          invoice_id: params.orderReference,
           amount: {
             currency_code: params.currency,
             value: majorAmount,
@@ -68,8 +77,8 @@ export class PayPalProvider implements PaymentProvider {
         brand_name: "Horemow IHGC 2026",
         landing_page: "NO_PREFERENCE",
         user_action: "PAY_NOW",
-        return_url: `${params.callbackUrl}?ref=${params.orderReference}`,
-        cancel_url: `${params.callbackUrl}?ref=${params.orderReference}&cancelled=true`,
+        return_url: returnUrl.toString(),
+        cancel_url: cancelUrl.toString(),
       },
     };
 
@@ -99,14 +108,14 @@ export class PayPalProvider implements PaymentProvider {
   }
 
   async captureOrder(paypalOrderId: string): Promise<VerifyPaymentResult> {
-    if (this.clientId.startsWith("mock") || process.env.MOCK_PAYMENTS === "true") {
+    if (!this.clientId || !this.clientSecret) {
       return {
-        isSuccessful: true,
-        isPending: false,
+        isSuccessful: false,
+        isPending: true,
         providerRef: paypalOrderId,
-        amountMinor: 2000,
+        amountMinor: 0,
         currency: "USD",
-        captureId: `cap_mock_${Date.now()}`,
+        error: "PayPal is not configured.",
       };
     }
 
@@ -125,13 +134,14 @@ export class PayPalProvider implements PaymentProvider {
   }
 
   async verifyPayment(providerRef: string): Promise<VerifyPaymentResult> {
-    if (this.clientId.startsWith("mock") || process.env.MOCK_PAYMENTS === "true") {
+    if (!this.clientId || !this.clientSecret) {
       return {
-        isSuccessful: true,
-        isPending: false,
+        isSuccessful: false,
+        isPending: true,
         providerRef,
-        amountMinor: 2000,
+        amountMinor: 0,
         currency: "USD",
+        error: "PayPal is not configured.",
       };
     }
 
@@ -169,14 +179,56 @@ export class PayPalProvider implements PaymentProvider {
       amountMinor,
       currency,
       payerEmail: data.payer?.email_address,
+      orderReference:
+        data.purchase_units?.[0]?.custom_id ||
+        data.purchase_units?.[0]?.invoice_id ||
+        data.purchase_units?.[0]?.reference_id,
       error: isSuccessful || isPending ? undefined : `PayPal status: ${status || "UNKNOWN"}`,
     };
   }
 
-  verifyWebhookSignature(rawBody: string, headers: Record<string, string | string[] | undefined>): boolean {
-    // In production PayPal webhook verification requires a POST to /v1/notifications/verify-webhook-signature
-    // with transmission_id, cert_url, auth_algo, and transmission_sig.
-    return true;
+  async verifyWebhookSignature(rawBody: string, headers: Headers): Promise<boolean> {
+    const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+    if (!webhookId) return false;
+
+    let webhookEvent: unknown;
+    try {
+      webhookEvent = JSON.parse(rawBody);
+    } catch {
+      return false;
+    }
+
+    const transmissionId = headers.get("paypal-transmission-id");
+    const transmissionTime = headers.get("paypal-transmission-time");
+    const certUrl = headers.get("paypal-cert-url");
+    const authAlgo = headers.get("paypal-auth-algo");
+    const transmissionSig = headers.get("paypal-transmission-sig");
+    if (!transmissionId || !transmissionTime || !certUrl || !authAlgo || !transmissionSig) return false;
+
+    try {
+      const accessToken = await this.getAccessToken();
+      const response = await fetch(`${this.baseUrl}/v1/notifications/verify-webhook-signature`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          auth_algo: authAlgo,
+          cert_url: certUrl,
+          transmission_id: transmissionId,
+          transmission_sig: transmissionSig,
+          transmission_time: transmissionTime,
+          webhook_id: webhookId,
+          webhook_event: webhookEvent,
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      const data = await response.json();
+      return response.ok && data.verification_status === "SUCCESS";
+    } catch {
+      return false;
+    }
   }
 }
 

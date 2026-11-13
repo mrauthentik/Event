@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { orders, attendees, groups, groupSeats, ticketTypes, ticketPrices, eventSettings } from "@/db/schema";
+import { orders, attendees, groups, groupSeats, ticketTypes, ticketPrices, eventSettings, providerRoutes, payments } from "@/db/schema";
 import { eq, and, ne, isNull, sql } from "drizzle-orm";
 import { CURRENCIES, SupportedCurrency } from "@/config/currencies";
 import { generateRefCode } from "@/lib/crypto/ref-code";
-import { getPaymentProvider } from "@/lib/payments";
+import { createOrderAccessToken } from "@/lib/crypto/ed25519";
+import { getPaymentProviderByName } from "@/lib/payments";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import crypto from "node:crypto";
 
 const registrationSchema = z.object({
   currency: z.enum(["NGN", "USD", "EUR", "GBP"]),
@@ -40,6 +42,7 @@ const registrationSchema = z.object({
         guardianPhone: z.string().optional(),
       })
     )
+    .max(500)
     .optional(),
   // Cloudflare Turnstile bot-protection token
   turnstileToken: z.string().optional(),
@@ -49,7 +52,7 @@ export async function POST(req: NextRequest) {
   try {
     // Rate limit: max 10 registration attempts per IP per 10 minutes
     const ip = clientIp(req);
-    const rl = rateLimit(`checkout_init:${ip}`, 10, 10 * 60 * 1000);
+    const rl = await rateLimit(`checkout_init:${ip}`, 10, 10 * 60 * 1000);
     if (!rl.allowed) {
       return NextResponse.json(
         { error: `Too many attempts. Please try again in ${rl.retryAfterSeconds} seconds.` },
@@ -59,6 +62,14 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const validated = registrationSchema.parse(body);
+    const phoneLimit = await rateLimit(
+      `checkout_phone:${validated.payerPhone.replace(/\D/g, "")}`,
+      5,
+      10 * 60 * 1000
+    );
+    if (!phoneLimit.allowed) {
+      return NextResponse.json({ error: "Too many recent attempts for this phone number." }, { status: 429 });
+    }
 
     // Bot protection: verify Cloudflare Turnstile token
     const turnstile = await verifyTurnstileToken(validated.turnstileToken, ip);
@@ -80,9 +91,15 @@ export async function POST(req: NextRequest) {
     }
 
     const seatsCount = validated.isGroup ? validated.groupSeatsCount : 1;
+    if (validated.attendeeList && validated.attendeeList.length > seatsCount) {
+      return NextResponse.json({ error: "Attendee count exceeds the number of paid seats." }, { status: 422 });
+    }
 
     // Capacity enforcement: count seats held by live orders (pending_payment + paid)
     const [settings] = await db.select().from(eventSettings).limit(1);
+    if (settings && Date.now() > settings.registrationDeadline.getTime()) {
+      return NextResponse.json({ error: "Registration is closed." }, { status: 403 });
+    }
     if (settings?.capacityLimit) {
       const liveOrders = await db
         .select({ count: sql<number>`count(*)::int` })
@@ -109,8 +126,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const totalMinor = seatsCount * currencyConfig.standardPriceMinor;
-
     // Generate unique order reference (HGC-XXXXXX)
     const orderRef = generateRefCode();
     const idempotencyKey = `order_${orderRef}_${Date.now()}`;
@@ -132,6 +147,27 @@ export async function POST(req: NextRequest) {
         .returning();
       defaultTicketType = inserted;
     }
+
+    const [configuredPrice] = await db
+      .select({ amountMinor: ticketPrices.amountMinor })
+      .from(ticketPrices)
+      .where(and(eq(ticketPrices.ticketTypeId, defaultTicketType.id), eq(ticketPrices.currency, validated.currency)))
+      .limit(1);
+    const totalMinor = seatsCount * (configuredPrice?.amountMinor ?? currencyConfig.standardPriceMinor);
+
+    const [providerRoute] = await db
+      .select()
+      .from(providerRoutes)
+      .where(eq(providerRoutes.currency, validated.currency))
+      .limit(1);
+    if (providerRoute && !providerRoute.isEnabled) {
+      return NextResponse.json({ error: "Checkout is temporarily unavailable for this currency." }, { status: 503 });
+    }
+    const selectedProvider = providerRoute?.primaryProvider ?? currencyConfig.defaultProvider;
+    if (selectedProvider === "manual_transfer") {
+      return NextResponse.json({ error: "Manual transfer checkout is not available yet." }, { status: 503 });
+    }
+    const provider = getPaymentProviderByName(selectedProvider);
 
     // Wrap creation in database transaction
     const result = await db.transaction(async (tx) => {
@@ -158,7 +194,7 @@ export async function POST(req: NextRequest) {
 
       // 2. If Group, create Group record
       if (validated.isGroup) {
-        const mgmtToken = `grp_${generateRefCode()}_${Date.now()}`;
+        const mgmtToken = crypto.randomBytes(32).toString("base64url");
         const [grp] = await tx
           .insert(groups)
           .values({
@@ -233,7 +269,7 @@ export async function POST(req: NextRequest) {
       if (validated.isGroup && createdGroupId) {
         const seatsRows = insertedAttendees.map((att, idx) => ({
           groupId: createdGroupId,
-          inviteCode: `seat_${orderRef}_${idx + 1}`,
+          inviteCode: crypto.randomBytes(24).toString("base64url"),
           attendeeId: att.id,
           isClaimed: idx < directAttendees.length,
           claimedAt: idx < directAttendees.length ? new Date() : null,
@@ -245,8 +281,9 @@ export async function POST(req: NextRequest) {
     });
 
     // 4. Initialize Payment Provider
-    const provider = getPaymentProvider(validated.currency as SupportedCurrency);
-    const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/payment/status`;
+    const ticketAccessToken = await createOrderAccessToken(result.order.id);
+    const callbackUrl = new URL("/payment/status", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
+    callbackUrl.searchParams.set("ticket_access", ticketAccessToken);
 
     const session = await provider.initializeCheckout({
       orderId: result.order.id,
@@ -256,7 +293,16 @@ export async function POST(req: NextRequest) {
       payerName: validated.payerName,
       payerPhoneE164: validated.payerPhone,
       payerEmail: validated.payerEmail,
-      callbackUrl,
+      callbackUrl: callbackUrl.toString(),
+    });
+
+    await db.insert(payments).values({
+      orderId: result.order.id,
+      provider: selectedProvider,
+      providerRef: session.providerRef,
+      status: "initiated",
+      currency: validated.currency,
+      amountMinor: totalMinor,
     });
 
     return NextResponse.json({

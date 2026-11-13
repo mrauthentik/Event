@@ -98,7 +98,7 @@ export default function StaffLoginPage() {
             </h1>
             <p className="text-xs text-gray-500">
               {challenge
-                ? "Enter the 6-digit code from your authenticator app."
+              ? "Enter the 6-digit code from your authenticator app."
                 : "IHGC 2026 operations console — authorized personnel only."}
             </p>
           </div>

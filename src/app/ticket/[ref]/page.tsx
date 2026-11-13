@@ -10,19 +10,24 @@ import { groups } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { SITE_CONFIG } from "@/config/site";
 import { Calendar, MapPin, Printer, ShieldCheck, Share2 } from "lucide-react";
-import { createTicketToken } from "@/lib/crypto/ed25519";
+import { createTicketToken, getTicketSigningKey, verifyOrderAccessToken } from "@/lib/crypto/ed25519";
 
 export const metadata = {
   title: "My Conference Ticket | IHGC 2026",
   description: "Official attendee admission ticket and cryptographic QR pass.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function TicketPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ ref: string }>;
+  searchParams: Promise<{ access?: string }>;
 }) {
   const { ref } = await params;
+  const { access } = await searchParams;
 
   // Lookup order
   const order = await db.query.orders.findFirst({
@@ -32,15 +37,16 @@ export default async function TicketPage({
   if (!order) {
     notFound();
   }
+  if (order.status !== "paid" || !access || !(await verifyOrderAccessToken(access, order.id))) {
+    notFound();
+  }
 
   // Lookup attendees
   const orderAttendees = await db.query.attendees.findMany({
     where: (a, { eq }) => eq(a.orderId, order.id),
   });
 
-  const signingKey =
-    process.env.TICKET_SIGNING_SECRET ||
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const signingKey = getTicketSigningKey();
 
   // Lookup group (if this is a group order) for dashboard link
   const [group] = order.isGroup

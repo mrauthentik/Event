@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { attendees } from "@/db/schema";
-import { gt, and, ne } from "drizzle-orm";
+import { attendees, orders } from "@/db/schema";
+import { gt, and, eq, isNull, ne } from "drizzle-orm";
 import { requireRole } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,11 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     const sinceParam = searchParams.get("since");
 
-    let queryConditions = ne(attendees.status, "unconfirmed");
+    let queryConditions = and(
+      ne(attendees.status, "unconfirmed"),
+      eq(orders.status, "paid"),
+      isNull(attendees.deletedAt)
+    )!;
 
     if (sinceParam) {
       const sinceDate = new Date(sinceParam);
@@ -22,29 +26,24 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const attendeeList = await db.query.attendees.findMany({
-      where: queryConditions,
-      columns: {
-        id: true,
-        refCode: true,
-        name: true,
-        parish: true,
-        status: true,
-        qrTokenHash: true,
-        checkedInAt: true,
-        bookletIssuedAt: true,
-        updatedAt: true,
-      },
-    });
-
-    const verifyingSecret =
-      process.env.NEXT_PUBLIC_TICKET_VERIFYING_SECRET ||
-      // Fallback matching dev signing secret
-      "dev-insecure-ticket-secret";
+    const attendeeList = await db
+      .select({
+        id: attendees.id,
+        refCode: attendees.refCode,
+        name: attendees.name,
+        parish: attendees.parish,
+        status: attendees.status,
+        qrTokenHash: attendees.qrTokenHash,
+        checkedInAt: attendees.checkedInAt,
+        bookletIssuedAt: attendees.bookletIssuedAt,
+        updatedAt: attendees.updatedAt,
+      })
+      .from(attendees)
+      .innerJoin(orders, eq(attendees.orderId, orders.id))
+      .where(queryConditions);
 
     return NextResponse.json({
       serverTimestamp: new Date().toISOString(),
-      verifyingSecret,
       count: attendeeList.length,
       attendees: attendeeList.map((a) => ({
         tokenHash: a.qrTokenHash,

@@ -138,7 +138,14 @@ export default function RegisterPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to initialize registration session.");
+        let message = data.error || "Failed to initialize registration session.";
+        if (data.details && typeof data.details === "object") {
+          const fieldErrors = Object.entries(data.details)
+            .map(([field, msgs]) => `${field}: ${(msgs as string[]).join(", ")}`)
+            .join("; ");
+          if (fieldErrors) message = `${message} (${fieldErrors})`;
+        }
+        throw new Error(message);
       }
 
       // Clear draft on successful initiation
@@ -165,10 +172,10 @@ export default function RegisterPage() {
         {/* Background Image with Dark Navy Gradient */}
         <div className="absolute inset-0 z-0">
           <Image
-            src="/images/crowd-bw.jpg"
-            alt="Horemow Congregation"
+            src="/images/conference_flyer.png"
+            alt="International Holiness General Conference 2026 flyer"
             fill
-            className="object-cover opacity-25 mix-blend-overlay"
+            className="object-cover object-[center_35%] opacity-20 mix-blend-overlay"
             priority
           />
           <div className="absolute inset-0 bg-gradient-to-b from-[#0E1020]/90 via-[#0E1020]/80 to-[#0E1020]" />

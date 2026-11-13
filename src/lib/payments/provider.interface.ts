@@ -26,12 +26,13 @@ export interface VerifyPaymentResult {
   currency: SupportedCurrency;
   captureId?: string;
   payerEmail?: string;
+  orderReference?: string;
   error?: string;
 }
 
 export interface PaymentProvider {
   initializeCheckout(params: InitializeCheckoutParams): Promise<CheckoutSessionResult>;
   verifyPayment(providerRef: string): Promise<VerifyPaymentResult>;
-  verifyWebhookSignature(rawBody: string, headers: Record<string, string | string[] | undefined>): boolean;
+  verifyWebhookSignature(rawBody: string, headers: Headers): Promise<boolean>;
 }
 

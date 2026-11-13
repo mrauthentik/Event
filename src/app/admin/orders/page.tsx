@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { desc } from "drizzle-orm";
 import { orders } from "@/db/schema";
+import { createOrderAccessToken } from "@/lib/crypto/ed25519";
 import { formatMoneyMinor, SupportedCurrency } from "@/config/currencies";
 import Link from "next/link";
 
@@ -52,7 +53,9 @@ export default async function AdminOrdersPage() {
                   </td>
                 </tr>
               ) : (
-                allOrders.map((o) => (
+                allOrders.map(async (o) => {
+                  const ticketAccess = o.status === "paid" ? await createOrderAccessToken(o.id) : null;
+                  return (
                   <tr key={o.id} className="hover:bg-gray-50/80 transition-colors">
                     <td className="px-5 py-3.5 font-mono font-bold text-black">
                       {o.reference}
@@ -94,9 +97,9 @@ export default async function AdminOrdersPage() {
                       {new Date(o.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-5 py-3.5 text-right">
-                      {o.status === "paid" && (
+                      {ticketAccess && (
                         <Link
-                          href={`/ticket/${o.reference}`}
+                          href={`/ticket/${o.reference}?access=${encodeURIComponent(ticketAccess)}`}
                           target="_blank"
                           className="text-[#0E7A6E] hover:underline font-semibold text-xs"
                         >
@@ -105,7 +108,8 @@ export default async function AdminOrdersPage() {
                       )}
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

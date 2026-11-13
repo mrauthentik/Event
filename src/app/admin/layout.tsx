@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { getSessionUser } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/session";
 import { LogoutButton } from "@/components/ui/logout-button";
 import {
   LayoutDashboard,
@@ -21,7 +21,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getSessionUser();
+  const user = await requireRole("admin");
   if (!user) {
     redirect("/staff/login");
   }

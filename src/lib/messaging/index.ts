@@ -12,13 +12,23 @@ export interface TicketDeliveryPayload {
   ticketUrl: string;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]!);
+}
+
 async function sendSms(phone: string, message: string): Promise<boolean> {
   const apiKey = process.env.TERMII_API_KEY;
   const senderId = process.env.TERMII_SENDER_ID || "HOREMOW";
 
   if (!apiKey || apiKey.startsWith("mock_")) {
-    console.log(`[SMS:mock] to=${phone} :: ${message}`);
-    return true;
+    console.info("[SMS] Delivery skipped because the provider is not configured.");
+    return false;
   }
 
   try {
@@ -36,12 +46,12 @@ async function sendSms(phone: string, message: string): Promise<boolean> {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data?.errors) {
-      console.error("[SMS] Termii error:", data);
+    console.error("[SMS] Termii rejected a message.");
       return false;
     }
     return true;
   } catch (err) {
-    console.error("[SMS] Termii request failed:", err);
+    console.error("[SMS] Termii request failed.");
     return false;
   }
 }
@@ -51,8 +61,8 @@ async function sendEmail(to: string, subject: string, html: string): Promise<boo
   const from = process.env.EMAIL_FROM || "IHGC 2026 <no-reply@horemow.org>";
 
   if (!apiKey || apiKey.startsWith("re_mock")) {
-    console.log(`[EMAIL:mock] to=${to} :: ${subject}`);
-    return true;
+    console.info("[Email] Delivery skipped because the provider is not configured.");
+    return false;
   }
 
   try {
@@ -65,19 +75,21 @@ async function sendEmail(to: string, subject: string, html: string): Promise<boo
       body: JSON.stringify({ from, to, subject, html }),
     });
     if (!res.ok) {
-      console.error("[EMAIL] Resend error:", await res.text());
+      console.error("[Email] Resend rejected a message.");
       return false;
     }
     return true;
   } catch (err) {
-    console.error("[EMAIL] Resend request failed:", err);
+    console.error("[Email] Resend request failed.");
     return false;
   }
 }
 
 export async function deliverTicket(payload: TicketDeliveryPayload): Promise<void> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const ticketUrl = payload.ticketUrl || `${appUrl}/ticket/${payload.refCode}`;
+  const ticketUrl = payload.ticketUrl;
+  const safeName = escapeHtml(payload.attendeeName);
+  const safeRefCode = escapeHtml(payload.refCode);
+  const safeTicketUrl = escapeHtml(ticketUrl);
 
   const smsMessage = `Horemow IHGC 2026: Your ticket for ${payload.attendeeName} is confirmed. Ref: ${payload.refCode}. Show your QR at the gate: ${ticketUrl}`;
 
@@ -88,11 +100,11 @@ export async function deliverTicket(payload: TicketDeliveryPayload): Promise<voi
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111320">
         <h2 style="color:#0E1020">Your IHGC 2026 Ticket is Confirmed</h2>
-        <p>Dear ${payload.attendeeName},</p>
+        <p>Dear ${safeName},</p>
         <p>Your registration for the <strong>International Holiness General Conference 2026</strong> (8–11 December 2026, Holiness Campground, Kwali, Abuja) is confirmed.</p>
-        <p><strong>Reference Code:</strong> <code style="background:#F3F4F6;padding:2px 6px;border-radius:4px">${payload.refCode}</code></p>
+        <p><strong>Reference Code:</strong> <code style="background:#F3F4F6;padding:2px 6px;border-radius:4px">${safeRefCode}</code></p>
         <p style="margin:24px 0">
-          <a href="${ticketUrl}" style="background:#0E1020;color:#8EE3D6;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:bold">View Your Ticket & QR Code</a>
+          <a href="${safeTicketUrl}" style="background:#0E1020;color:#8EE3D6;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:bold">View Your Ticket & QR Code</a>
         </p>
         <p style="font-size:12px;color:#6B7280">Show this ticket at the registration stand on arrival. Keep your reference code handy.</p>
       </div>`;

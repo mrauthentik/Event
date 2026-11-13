@@ -12,17 +12,18 @@ function StatusContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const ref = searchParams.get("ref");
+  const paypalToken = searchParams.get("token");
+  const ticketAccess = searchParams.get("ticket_access");
   const isCancelled = searchParams.get("cancelled") === "true";
-  const isMockSuccess = searchParams.get("mock_success") === "true";
 
   const [status, setStatus] = useState<"polling" | "paid" | "pending" | "failed">("polling");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pollCount, setPollCount] = useState(0);
 
   useEffect(() => {
-    if (!ref) {
+    if (!ref || !ticketAccess) {
       setStatus("failed");
-      setErrorMessage("No reference code provided.");
+      setErrorMessage("Payment session details are missing. Use the ticket recovery form if you completed payment.");
       return;
     }
 
@@ -37,9 +38,10 @@ function StatusContent() {
 
     const checkStatus = async () => {
       try {
-        const url = `/api/checkout/status/${encodeURIComponent(ref)}${
-          isMockSuccess ? "?mock_success=true" : ""
-        }`;
+        const statusUrl = new URL(`/api/checkout/status/${encodeURIComponent(ref)}`, window.location.origin);
+        if (paypalToken) statusUrl.searchParams.set("paypal_token", paypalToken);
+        statusUrl.searchParams.set("ticket_access", ticketAccess);
+        const url = statusUrl.toString();
         const res = await fetch(url);
         const data = await res.json();
 
@@ -49,7 +51,7 @@ function StatusContent() {
           setStatus("paid");
           // Redirect to ticket page immediately
           setTimeout(() => {
-            router.push(`/ticket/${ref}`);
+            router.push(`/ticket/${ref}?access=${encodeURIComponent(ticketAccess)}`);
           }, 1500);
           return;
         }
@@ -76,17 +78,20 @@ function StatusContent() {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [ref, isCancelled, isMockSuccess, router]);
+  }, [ref, paypalToken, ticketAccess, isCancelled, router]);
 
   const handleManualRecheck = async () => {
-    if (!ref) return;
+    if (!ref || !ticketAccess) return;
     setStatus("polling");
     try {
-      const res = await fetch(`/api/checkout/status/${encodeURIComponent(ref)}`);
+      const statusUrl = new URL(`/api/checkout/status/${encodeURIComponent(ref)}`, window.location.origin);
+      if (paypalToken) statusUrl.searchParams.set("paypal_token", paypalToken);
+      statusUrl.searchParams.set("ticket_access", ticketAccess);
+      const res = await fetch(statusUrl.toString());
       const data = await res.json();
       if (data.status === "paid") {
         setStatus("paid");
-        router.push(`/ticket/${ref}`);
+        router.push(`/ticket/${ref}?access=${encodeURIComponent(ticketAccess)}`);
       } else {
         setStatus("pending");
       }
@@ -132,7 +137,7 @@ function StatusContent() {
           </div>
           <div className="pt-2">
             <Link
-              href={`/ticket/${ref}`}
+              href={`/ticket/${ref}?access=${encodeURIComponent(ticketAccess || "")}`}
               className="inline-flex items-center justify-center px-6 py-2.5 rounded-full bg-[#8EE3D6] text-[#0E1020] font-bold text-xs shadow-sm"
             >
               View Ticket Now →

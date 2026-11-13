@@ -6,8 +6,8 @@ export type VerifyOutcome =
   | { status: "forged"; error: string }
   | { status: "unknown"; error: string };
 
-function getVerifierSecret(): string {
-  return process.env.NEXT_PUBLIC_TICKET_VERIFYING_SECRET || "";
+function getVerifierPublicKey(): string {
+  return process.env.NEXT_PUBLIC_TICKET_VERIFYING_PUBLIC_KEY || "";
 }
 
 async function findByAttendeeId(attendeeId: string): Promise<CachedAttendee | undefined> {
@@ -19,7 +19,7 @@ async function findByAttendeeId(attendeeId: string): Promise<CachedAttendee | un
  * attendee, verifying the HMAC signature for signed tokens.
  */
 export async function resolveScannedToken(tokenString: string): Promise<VerifyOutcome> {
-  const pubKey = getVerifierSecret();
+  const publicKey = getVerifierPublicKey();
   const trimmed = tokenString.trim();
   const hash = await sha256Hex(trimmed);
 
@@ -32,8 +32,8 @@ export async function resolveScannedToken(tokenString: string): Promise<VerifyOu
   }
 
   // 3. Signed token path: verify HMAC, resolve by payload.attendeeId
-  if (!attendee && trimmed.includes(".") && pubKey) {
-    const verified = await verifyTicketToken(trimmed, pubKey);
+  if (!attendee && trimmed.includes(".") && publicKey) {
+    const verified = await verifyTicketToken(trimmed, publicKey);
     if (verified.isValid && verified.payload?.attendeeId) {
       attendee = await findByAttendeeId(verified.payload.attendeeId);
     } else if (!verified.isValid) {
@@ -46,13 +46,13 @@ export async function resolveScannedToken(tokenString: string): Promise<VerifyOu
 
   // 4. Non-ref tokens that weren't resolved above still need signature proof
   if (!attendee && !trimmed.startsWith("HGC-")) {
-    if (!pubKey) {
+    if (!publicKey) {
       return {
         status: "forged",
-        error: "Verifier secret not configured (NEXT_PUBLIC_TICKET_VERIFYING_SECRET).",
+        error: "Ticket verification key is not configured.",
       };
     }
-    const verified = await verifyTicketToken(trimmed, pubKey);
+    const verified = await verifyTicketToken(trimmed, publicKey);
     if (!verified.isValid) {
       return {
         status: "forged",

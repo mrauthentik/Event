@@ -15,6 +15,10 @@ export async function verifyTurnstileToken(
     secret.startsWith("1x0000000000000000000000000000000") ||
     secret === "1x0000000000000000000000000000000AA";
 
+  if (isTestKey && process.env.NODE_ENV === "production") {
+    return { success: false, error: "Bot protection is not configured with production keys." };
+  }
+
   if (isTestKey && process.env.NODE_ENV !== "production") {
     return { success: true };
   }

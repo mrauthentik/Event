@@ -1,49 +1,51 @@
 import { describe, it, expect } from "vitest";
 import {
+  createOrderAccessToken,
   createTicketToken,
+  deriveTicketPublicKey,
+  verifyOrderAccessToken,
   verifyTicketToken,
 } from "../ed25519";
 
-const SECRET = "test-ticket-secret";
-const WRONG_SECRET = "attacker-secret";
+const PRIVATE_KEY = "11".repeat(32);
+const WRONG_PRIVATE_KEY = "22".repeat(32);
 
-describe("HMAC Ticket Token", () => {
-  it("should create a signed ticket and verify it with the same secret", async () => {
+describe("Ed25519 ticket tokens", () => {
+  it("signs tokens that verify with the public key only", async () => {
     const attendeeId = "att_123456789";
-    const { tokenString, tokenHash } = await createTicketToken(attendeeId, SECRET);
+    const publicKey = await deriveTicketPublicKey(PRIVATE_KEY);
+    const { tokenString, tokenHash } = await createTicketToken(attendeeId, PRIVATE_KEY);
 
-    expect(tokenString).toBeDefined();
-    expect(tokenString).toContain(".");
-    expect(tokenHash).toHaveLength(64); // sha256 hex string
-
-    const verification = await verifyTicketToken(tokenString, SECRET);
+    expect(tokenHash).toHaveLength(64);
+    const verification = await verifyTicketToken(tokenString, publicKey);
     expect(verification.isValid).toBe(true);
     expect(verification.payload?.attendeeId).toBe(attendeeId);
     expect(verification.payload?.version).toBe(1);
     expect(verification.payload?.nonce).toBeDefined();
   });
 
-  it("should reject a forged ticket signed with a different secret", async () => {
-    const forged = await createTicketToken("forged_attendee", WRONG_SECRET);
-
-    const verification = await verifyTicketToken(forged.tokenString, SECRET);
+  it("rejects signatures from a different private key", async () => {
+    const publicKey = await deriveTicketPublicKey(PRIVATE_KEY);
+    const forged = await createTicketToken("forged_attendee", WRONG_PRIVATE_KEY);
+    const verification = await verifyTicketToken(forged.tokenString, publicKey);
     expect(verification.isValid).toBe(false);
-    expect(verification.error).toContain("Invalid signature");
+    expect(verification.error).toContain("signature");
   });
 
-  it("should reject a tampered token payload", async () => {
-    const { tokenString } = await createTicketToken("real_attendee", SECRET);
-    const parts = tokenString.split(".");
+  it("rejects tampered payloads and malformed tokens", async () => {
+    const publicKey = await deriveTicketPublicKey(PRIVATE_KEY);
+    const { tokenString } = await createTicketToken("real_attendee", PRIVATE_KEY);
+    const [payload, signature] = tokenString.split(".");
+    const tampered = `${payload.slice(0, -2)}AA.${signature}`;
 
-    // Tamper with payload part
-    const tampered = `eyJhdHRlbmRlZUlkIjoidGFtcGVyZWQifQ.${parts[1]}`;
-
-    const verification = await verifyTicketToken(tampered, SECRET);
-    expect(verification.isValid).toBe(false);
+    expect((await verifyTicketToken(tampered, publicKey)).isValid).toBe(false);
+    expect((await verifyTicketToken("not-a-token", publicKey)).isValid).toBe(false);
   });
 
-  it("should reject malformed tokens", async () => {
-    const verification = await verifyTicketToken("not-a-token", SECRET);
-    expect(verification.isValid).toBe(false);
+  it("requires the signed order capability token to match the order", async () => {
+    const publicKey = await deriveTicketPublicKey(PRIVATE_KEY);
+    const accessToken = await createOrderAccessToken("order_123", PRIVATE_KEY);
+    expect(await verifyOrderAccessToken(accessToken, "order_123", publicKey)).toBe(true);
+    expect(await verifyOrderAccessToken(accessToken, "order_456", publicKey)).toBe(false);
   });
 });

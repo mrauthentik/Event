@@ -19,6 +19,10 @@ export function getPaymentProvider(currency: SupportedCurrency): PaymentProvider
   }
 }
 
+export function getPaymentProviderByName(name: "paystack" | "paypal"): PaymentProvider {
+  return name === "paypal" ? paypal : paystack;
+}
+
 export { paystack, paypal };
 export * from "./provider.interface";
 

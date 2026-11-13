@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { groups, groupSeats, attendees, orders } from "@/db/schema";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { createOrderAccessToken } from "@/lib/crypto/ed25519";
 
 /**
  * GET /api/group/dashboard/[token]
@@ -15,7 +16,7 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const ip = clientIp(req);
-  const rl = rateLimit(`group_dash:${ip}`, 30, 5 * 60 * 1000);
+  const rl = await rateLimit(`group_dash:${ip}`, 30, 5 * 60 * 1000);
   if (!rl.allowed) {
     return NextResponse.json({ error: "Too many requests." }, { status: 429 });
   }
@@ -68,6 +69,7 @@ export async function GET(
     );
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const ticketAccess = order?.status === "paid" ? await createOrderAccessToken(order.id) : null;
 
     return NextResponse.json({
       group: {
@@ -82,14 +84,16 @@ export async function GET(
             reference: order.reference,
             status: order.status,
             currency: order.currency,
-            ticketUrl: `${appUrl}/ticket/${order.reference}`,
+            ticketUrl: ticketAccess
+              ? `${appUrl}/ticket/${order.reference}?access=${encodeURIComponent(ticketAccess)}`
+              : null,
           }
         : null,
       seats: seatDetails.map((s) => ({
         ...s,
         inviteUrl: `${appUrl}/group/claim/${s.inviteCode}`,
       })),
-    });
+    }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
   } catch (error: any) {
     console.error("Group dashboard error:", error);
     return NextResponse.json({ error: "Failed to load group dashboard." }, { status: 500 });

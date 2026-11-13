@@ -1,133 +1,199 @@
 import { NextRequest, NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/db";
-import { orders, attendees, payments, scanEvents, ticketTypes } from "@/db/schema";
+import { attendees, auditLog, eventSettings, orders, payments, scanEvents, ticketPrices, ticketTypes } from "@/db/schema";
+import { CURRENCIES } from "@/config/currencies";
 import { generateRefCode } from "@/lib/crypto/ref-code";
-import { createTicketToken } from "@/lib/crypto/ed25519";
+import { createOrderAccessToken, createTicketToken, getTicketSigningKey } from "@/lib/crypto/ed25519";
 import { requireRole } from "@/lib/auth/session";
+import { isSameOriginRequest } from "@/lib/security/origin";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
-export async function POST(req: NextRequest) {
+const walkInSchema = z.object({
+  idempotencyKey: z.string().uuid(),
+  name: z.string().trim().min(2).max(255),
+  phone: z.string().trim().min(7).max(32),
+  state: z.string().trim().max(128).optional(),
+  parish: z.string().trim().max(255).optional(),
+  paymentMethod: z.enum(["cash", "pos"]),
+  tellerOrReceipt: z.string().trim().max(128).optional(),
+  standId: z.string().trim().min(1).max(64),
+}).superRefine((value, context) => {
+  const normalizedPhone = value.phone.replace(/[\s()-]/g, "");
+  if (!/^\+[1-9]\d{6,14}$/.test(normalizedPhone)) {
+    context.addIssue({ code: "custom", path: ["phone"], message: "Use a valid international phone number." });
+  }
+  if (value.paymentMethod === "pos" && (!value.tellerOrReceipt || value.tellerOrReceipt.length < 3)) {
+    context.addIssue({ code: "custom", path: ["tellerOrReceipt"], message: "Enter the POS RRN or approval code." });
+  }
+});
+
+export async function GET() {
   const user = await requireRole("attendant");
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try {
-    const { name, phone, state, parish, paymentMethod, tellerOrReceipt, standId } =
-      await req.json();
+  const type = await db.query.ticketTypes.findFirst({ where: (row, { eq }) => eq(row.isActive, true) });
+  const [price] = type
+    ? await db.select({ amountMinor: ticketPrices.amountMinor })
+        .from(ticketPrices)
+        .where(and(eq(ticketPrices.ticketTypeId, type.id), eq(ticketPrices.currency, "NGN")))
+        .limit(1)
+    : [];
+  return NextResponse.json({ amountMinor: price?.amountMinor ?? CURRENCIES.NGN.standardPriceMinor, currency: "NGN" }, {
+    headers: { "Cache-Control": "private, no-store" },
+  });
+}
 
-    if (!name || !phone) {
-      return NextResponse.json(
-        { error: "Attendee name and phone number are required." },
-        { status: 400 }
-      );
-    }
+export async function POST(req: NextRequest) {
+  if (!isSameOriginRequest(req)) {
+    return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  }
+  const user = await requireRole("attendant");
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const orderRef = generateRefCode();
-    const attendeeRef = generateRefCode();
-    const now = new Date();
-    const amountMinor = 500_000; // Flat ₦5,000 in kobo
-
-    let defaultTicketType = await db.query.ticketTypes.findFirst({
-      where: (t, { eq }) => eq(t.isActive, true),
+  const ip = clientIp(req);
+  const limit = await rateLimit(`walkin:${user.id}:${ip}`, 60, 10 * 60 * 1000);
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Too many walk-in registrations. Try again shortly." }, {
+      status: 429,
+      headers: { "Retry-After": String(limit.retryAfterSeconds) },
     });
+  }
 
-    if (!defaultTicketType) {
-      const [inserted] = await db
-        .insert(ticketTypes)
-        .values({
+  try {
+    const input = walkInSchema.parse(await req.json());
+    const phone = input.phone.replace(/[\s()-]/g, "");
+    if (input.paymentMethod === "pos" && !input.tellerOrReceipt) {
+      return NextResponse.json({ error: "Enter the POS RRN or approval code." }, { status: 422 });
+    }
+    const signingKey = getTicketSigningKey();
+    const scopedIdempotencyKey = `walkin:${user.id}:${input.idempotencyKey}`;
+    const result = await db.transaction(async (tx) => {
+      const now = new Date();
+      const [settings] = await tx.select().from(eventSettings).limit(1);
+      if (settings && now > settings.registrationDeadline) {
+        throw new Error("Registration is closed.");
+      }
+
+      let ticketType = await tx.query.ticketTypes.findFirst({ where: (type, { eq }) => eq(type.isActive, true) });
+      if (!ticketType) {
+        const [createdType] = await tx.insert(ticketTypes).values({
           name: "Standard Registration",
           description: "All-access 4-day pass to IHGC 2026",
           isActive: true,
-        })
-        .returning();
-      defaultTicketType = inserted;
-    }
+        }).returning();
+        ticketType = createdType;
+      }
+      const [price] = await tx.select({ amountMinor: ticketPrices.amountMinor })
+        .from(ticketPrices)
+        .where(and(eq(ticketPrices.ticketTypeId, ticketType.id), eq(ticketPrices.currency, "NGN")))
+        .limit(1);
+      const amountMinor = price?.amountMinor ?? CURRENCIES.NGN.standardPriceMinor;
+      const orderReference = generateRefCode();
 
-    const signingKey =
-      process.env.TICKET_SIGNING_SECRET ||
-      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+      const [order] = await tx.insert(orders).values({
+        reference: orderReference,
+        status: "paid",
+        currency: "NGN",
+        totalMinor: amountMinor,
+        feeMinor: 0,
+        payerName: input.name,
+        payerPhoneE164: phone,
+        payerEmail: null,
+        isGroup: false,
+        idempotencyKey: scopedIdempotencyKey,
+        expiresAt: null,
+      }).onConflictDoNothing({ target: orders.idempotencyKey }).returning();
 
-    const result = await db.transaction(async (tx) => {
-      // 1. Create Order as PAID
-      const [order] = await tx
-        .insert(orders)
-        .values({
-          reference: orderRef,
-          status: "paid",
-          currency: "NGN",
-          totalMinor: amountMinor,
-          feeMinor: 0,
-          payerName: name,
-          payerPhoneE164: phone,
-          payerEmail: null,
-          isGroup: false,
-          idempotencyKey: `walkin_${orderRef}_${Date.now()}`,
-          expiresAt: null,
-        })
-        .returning();
+      if (!order) {
+        const [existingOrder] = await tx.select().from(orders)
+          .where(eq(orders.idempotencyKey, scopedIdempotencyKey)).limit(1);
+        if (!existingOrder) throw new Error("The walk-in request could not be safely retried.");
+        const [existingAttendee] = await tx.select().from(attendees)
+          .where(eq(attendees.orderId, existingOrder.id)).limit(1);
+        if (!existingAttendee) throw new Error("The existing walk-in record is incomplete. Contact an administrator.");
+        return { order: existingOrder, attendee: existingAttendee };
+      }
 
-      // 2. Create Payment record
+      const paymentReference = `WALKIN_${input.idempotencyKey}`;
       await tx.insert(payments).values({
         orderId: order.id,
         provider: "manual_transfer",
-        providerRef: `${paymentMethod.toUpperCase()}_${orderRef}`,
-        providerCaptureId: tellerOrReceipt || "GATE_CASH",
+        providerRef: paymentReference,
+        providerCaptureId: input.tellerOrReceipt || "CASH_COLLECTED_AT_GATE",
         status: "completed",
         currency: "NGN",
         amountMinor,
         rawPayloadHash: null,
       });
 
-      // 3. Create Attendee as CHECKED_IN
-      // Generate temporary ID to sign
-      const tempId = crypto.randomUUID();
-      const { tokenHash } = await createTicketToken(tempId, signingKey);
+      const attendeeId = crypto.randomUUID();
+      const { tokenHash } = await createTicketToken(attendeeId, signingKey);
+      const [attendee] = await tx.insert(attendees).values({
+        id: attendeeId,
+        orderId: order.id,
+        ticketTypeId: ticketType.id,
+        refCode: generateRefCode(),
+        name: input.name,
+        phoneE164: phone,
+        country: "Nigeria",
+        state: input.state || "FCT Abuja",
+        parish: input.parish || null,
+        status: "checked_in",
+        qrTokenHash: tokenHash,
+        checkedInAt: now,
+      }).returning();
 
-      const [attendee] = await tx
-        .insert(attendees)
-        .values({
-          id: tempId,
-          orderId: order.id,
-          ticketTypeId: defaultTicketType.id,
-          refCode: attendeeRef,
-          name,
-          phoneE164: phone,
-          country: "Nigeria",
-          state: state || "FCT Abuja",
-          parish: parish || null,
-          status: "checked_in",
-          qrTokenHash: tokenHash,
-          checkedInAt: now,
-        })
-        .returning();
-
-      // 4. Record Arrival Scan Event
       await tx.insert(scanEvents).values({
         attendeeId: attendee.id,
         scanType: "arrival",
-        standId: standId || "Gate A",
+        staffId: user.id,
+        standId: input.standId,
         clientTimestamp: now,
-        idempotencyKey: `walkin_scan_${attendee.id}_${Date.now()}`,
+        idempotencyKey: `walkin_scan_${input.idempotencyKey}`,
         result: "valid",
-        notes: `Walk-in registration via ${paymentMethod}`,
+        notes: `Walk-in registration paid by ${input.paymentMethod.toUpperCase()}`,
       });
 
-      return attendee;
+      await tx.insert(auditLog).values({
+        staffId: user.id,
+        action: "walkin_registration_and_checkin",
+        entityType: "orders",
+        entityId: order.id,
+        oldState: null,
+        newState: {
+          reference: order.reference,
+          amountMinor,
+          currency: "NGN",
+          paymentMethod: input.paymentMethod,
+          attendeeId: attendee.id,
+        },
+        ipAddress: ip === "unknown" ? null : ip,
+        userAgent: req.headers.get("user-agent"),
+      });
+
+      return { order, attendee };
     });
 
+    const accessToken = await createOrderAccessToken(result.order.id);
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+    const ticketUrl = `${appUrl}/ticket/${result.order.reference}?access=${encodeURIComponent(accessToken)}`;
     return NextResponse.json({
       success: true,
+      ticketUrl,
+      amountMinor: result.order.totalMinor,
       attendee: {
-        id: result.id,
-        refCode: result.refCode,
-        name: result.name,
-        phone: result.phoneE164,
-        status: result.status,
+        id: result.attendee.id,
+        refCode: result.attendee.refCode,
+        name: result.attendee.name,
+        status: result.attendee.status,
       },
-    });
-  } catch (err: any) {
-    console.error("Walk-in registration error:", err);
-    return NextResponse.json(
-      { error: err?.message || "Failed to process walk-in." },
-      { status: 500 }
-    );
+    }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: "Check the name, international phone number, payment method, and POS reference." }, { status: 422 });
+    }
+    const message = error instanceof Error ? error.message : "Failed to process walk-in.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
-

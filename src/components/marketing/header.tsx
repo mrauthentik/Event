@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Phone, Mail, Menu, X, MessageCircle, Share2 } from "lucide-react";
-import { FacebookIcon, YoutubeIcon } from "@/components/icons/social-icons";
+import { FacebookIcon, YoutubeIcon, XIcon } from "@/components/icons/social-icons";
 import { SITE_CONFIG } from "@/config/site";
 
 export function Header() {
@@ -44,6 +44,15 @@ export function Header() {
             className="w-8 h-8 rounded-full bg-gray-100 hover:bg-[#CDEFEA] hover:text-[#0E1020] text-gray-600 flex items-center justify-center transition-colors"
           >
             <YoutubeIcon className="w-3.5 h-3.5" />
+          </a>
+          <a
+            href={SITE_CONFIG.socials.x}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="X"
+            className="w-8 h-8 rounded-full bg-gray-100 hover:bg-[#CDEFEA] hover:text-[#0E1020] text-gray-600 flex items-center justify-center transition-colors"
+          >
+            <XIcon className="w-3.5 h-3.5" />
           </a>
           <a
             href={SITE_CONFIG.contact.whatsAppUrl}

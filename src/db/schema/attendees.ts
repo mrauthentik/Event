@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { attendeeStatusEnum, currencyEnum } from "./enums";
 import { orders } from "./orders";
 
@@ -22,6 +22,7 @@ export const ticketPrices = pgTable(
   },
   (table) => [
     index("ticket_prices_lookup_idx").on(table.ticketTypeId, table.currency),
+    uniqueIndex("ticket_prices_type_currency_uq").on(table.ticketTypeId, table.currency),
   ]
 );
 

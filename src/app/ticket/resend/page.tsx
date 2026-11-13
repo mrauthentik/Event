@@ -24,29 +24,21 @@ export default function ResendTicketPage() {
     setLoading(true);
 
     try {
-      // If user typed a reference code directly (e.g. HGC-XXXXXX)
+      // Recovery uses a generic response and resends a signed ticket-access link.
       const clean = query.trim().toUpperCase();
-      if (clean.startsWith("HGC-")) {
-        const res = await fetch(`/api/checkout/status/${clean}`);
-        const data = await res.json();
-        if (data.status === "paid") {
-          window.location.href = `/ticket/${clean}`;
-          return;
-        }
-      }
-
-      // Otherwise submit to recovery endpoint (phone/email/ref) which
-      // reconciles pending payments with the gateway and resends tickets.
       const payload: any = {};
       if (clean.startsWith("HGC-")) payload.reference = clean;
       else if (query.includes("@")) payload.email = query.trim();
       else payload.phone = query.trim();
 
-      await fetch("/api/tickets/recover", {
+      const response = await fetch("/api/tickets/recover", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (!response.ok) {
+        throw new Error("Unable to process the request right now. Please try again.");
+      }
 
       // Generic response to prevent enumeration
       setSubmitted(true);

@@ -24,7 +24,7 @@ const claimSchema = z.object({
  */
 export async function POST(req: NextRequest) {
   const ip = clientIp(req);
-  const rl = rateLimit(`group_claim:${ip}`, 15, 10 * 60 * 1000);
+  const rl = await rateLimit(`group_claim:${ip}`, 15, 10 * 60 * 1000);
   if (!rl.allowed) {
     return NextResponse.json(
       { error: `Too many attempts. Please try again in ${rl.retryAfterSeconds} seconds.` },

@@ -9,9 +9,11 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
+    "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "auth:provision-totp": "node scripts/provision-totp.mjs"
   },
   "keywords": [],
   "author": "",

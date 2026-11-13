@@ -54,6 +54,7 @@ export default function HomePage() {
                 socials={{
                   youtube: SITE_CONFIG.socials.youtube,
                   facebook: SITE_CONFIG.socials.facebook,
+                  x: SITE_CONFIG.socials.x,
                 }}
               />
             ))}

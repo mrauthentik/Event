@@ -11,9 +11,9 @@ import { Parallax } from "@/components/ui/parallax";
 export function HeroBackground() {
   return (
     <div className="absolute inset-0 z-0 overflow-hidden">
-      <Parallax speed={0.22} className="absolute -inset-y-[18%] inset-x-0">
+      <Parallax speed={0.3} className="absolute -inset-y-[18%] inset-x-0">
         <Image
-          src="/images/crowd-bw.jpg"
+          src="/images/crowd-bw_2.jpg"
           alt="Horemow International Holiness General Conference Congregation"
           fill
           priority

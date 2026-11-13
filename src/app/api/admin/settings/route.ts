@@ -1,23 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { eventSettings, providerRoutes, ticketTypes, ticketPrices } from "@/db/schema";
+import { auditLog, eventSettings, providerRoutes, ticketTypes, ticketPrices } from "@/db/schema";
 import { requireRole } from "@/lib/auth/session";
+import { isSameOriginRequest } from "@/lib/security/origin";
+import { clientIp } from "@/lib/rate-limit";
+
+const validDate = z.string().refine((value) => Number.isFinite(Date.parse(value)), "Invalid date");
+const thresholds = z.string().max(255).refine((value) => {
+  if (!value.trim()) return true;
+  const values = value.split(",").map((part) => Number(part.trim()));
+  return values.every((number) => Number.isSafeInteger(number) && number > 0) &&
+    values.every((number, index) => index === 0 || number > values[index - 1]);
+}, "Use increasing positive integer thresholds separated by commas.");
 
 const settingsSchema = z.object({
-  eventName: z.string().min(2).optional(),
-  theme: z.string().optional(),
-  startsAt: z.string().optional(),
-  endsAt: z.string().optional(),
-  registrationDeadline: z.string().optional(),
-  venueName: z.string().optional(),
-  venueAddress: z.string().optional(),
-  venueMapUrl: z.string().url().optional().or(z.literal("")),
-  contactPhone: z.string().optional(),
-  contactEmail: z.string().email().optional().or(z.literal("")),
+  eventName: z.string().trim().min(2).max(255).optional(),
+  theme: z.string().trim().max(255).optional(),
+  startsAt: validDate.optional(),
+  endsAt: validDate.optional(),
+  registrationDeadline: validDate.optional(),
+  venueName: z.string().trim().max(255).optional(),
+  venueAddress: z.string().trim().max(2000).optional(),
+  venueMapUrl: z.string().url().max(2048).optional().or(z.literal("")),
+  contactPhone: z.string().trim().max(32).optional(),
+  contactEmail: z.string().email().max(255).optional().or(z.literal("")),
   capacityLimit: z.number().int().positive().nullable().optional(),
-  capacityAlertThresholds: z.string().optional(),
+  capacityAlertThresholds: thresholds.optional(),
 });
 
 const routesSchema = z.array(
@@ -27,14 +37,20 @@ const routesSchema = z.array(
     isEnabled: z.boolean(),
     feePolicy: z.enum(["organizer_absorbs", "pass_to_customer"]),
   })
-);
+).refine((routes) => new Set(routes.map((route) => route.currency)).size === routes.length, "Currencies must be unique.");
 
 const pricesSchema = z.array(
   z.object({
     currency: z.enum(["NGN", "USD", "EUR", "GBP"]),
     amountMinor: z.number().int().positive(),
   })
-);
+).refine((prices) => new Set(prices.map((price) => price.currency)).size === prices.length, "Currencies must be unique.");
+
+const updateSchema = z.object({
+  settings: settingsSchema.optional(),
+  routes: routesSchema.optional(),
+  prices: pricesSchema.optional(),
+}).strict();
 
 export async function GET() {
   const user = await requireRole("admin");
@@ -45,7 +61,9 @@ export async function GET() {
     const types = await db.select().from(ticketTypes);
     const prices = await db.select().from(ticketPrices);
 
-    return NextResponse.json({ settings, routes, ticketTypes: types, prices });
+    return NextResponse.json({ settings, routes, ticketTypes: types, prices }, {
+      headers: { "Cache-Control": "private, no-store" },
+    });
   } catch (error: any) {
     console.error("Admin settings GET error:", error);
     return NextResponse.json({ error: "Failed to load settings." }, { status: 500 });
@@ -53,78 +71,85 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
+  if (!isSameOriginRequest(req)) {
+    return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  }
   const user = await requireRole("admin");
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const body = await req.json();
+    const body = updateSchema.parse(await req.json());
 
-    // Event settings
-    if (body.settings) {
-      const s = settingsSchema.parse(body.settings);
-      const [existing] = await db.select().from(eventSettings).limit(1);
-      const update: any = { updatedAt: new Date() };
-      for (const [k, v] of Object.entries(s)) {
-        if (v !== undefined) {
-          if (k === "startsAt" || k === "endsAt" || k === "registrationDeadline") {
-            update[k] = v ? new Date(v as string) : null;
-          } else if (k === "capacityLimit") {
-            update[k] = v === null ? null : v;
-          } else if (k === "contactEmail") {
-            update[k] = v || null;
+    await db.transaction(async (tx) => {
+      const [beforeSettings] = await tx.select().from(eventSettings).limit(1);
+      const beforeRoutes = await tx.select().from(providerRoutes);
+      const beforePrices = await tx.select().from(ticketPrices);
+
+      if (body.settings) {
+        const [existing] = await tx.select().from(eventSettings).limit(1);
+        const update: Record<string, unknown> = { updatedAt: new Date() };
+        for (const [key, value] of Object.entries(body.settings)) {
+          if (value === undefined) continue;
+          if (key === "startsAt" || key === "endsAt" || key === "registrationDeadline") {
+            update[key] = new Date(value as string);
+          } else if (key === "contactEmail") {
+            update[key] = value || null;
           } else {
-            update[k] = v;
+            update[key] = value;
           }
         }
+        if (existing) {
+          await tx.update(eventSettings).set(update).where(eq(eventSettings.id, existing.id));
+        } else {
+          await tx.insert(eventSettings).values({
+            startsAt: new Date("2026-12-08T16:00:00+01:00"),
+            endsAt: new Date("2026-12-11T23:59:59+01:00"),
+            registrationDeadline: new Date("2026-12-11T23:59:59+01:00"),
+            ...update,
+          } as typeof eventSettings.$inferInsert);
+        }
       }
-      if (existing) {
-        await db.update(eventSettings).set(update).where(eq(eventSettings.id, existing.id));
-      } else {
-        await db.insert(eventSettings).values({
-          startsAt: new Date("2026-12-08T16:00:00+01:00"),
-          endsAt: new Date("2026-12-11T23:59:59+01:00"),
-          registrationDeadline: new Date("2026-12-11T23:59:59+01:00"),
-          ...update,
-        });
-      }
-    }
 
-    // Provider routes
-    if (body.routes) {
-      const routes = routesSchema.parse(body.routes);
-      for (const r of routes) {
-        await db
-          .insert(providerRoutes)
-          .values({ ...r, updatedAt: new Date() })
+      for (const route of body.routes ?? []) {
+        await tx.insert(providerRoutes)
+          .values({ ...route, updatedAt: new Date() })
           .onConflictDoUpdate({
             target: providerRoutes.currency,
-            set: { ...r, updatedAt: new Date() },
+            set: { ...route, updatedAt: new Date() },
           });
       }
-    }
 
-    // Ticket prices
-    if (body.prices) {
-      const prices = pricesSchema.parse(body.prices);
-      const [defaultType] = await db.select().from(ticketTypes).limit(1);
-      if (defaultType) {
-        for (const p of prices) {
-          await db
-            .insert(ticketPrices)
+      if (body.prices?.length) {
+        const [defaultType] = await tx.select().from(ticketTypes).limit(1);
+        if (!defaultType) throw new Error("No active ticket type is configured.");
+        for (const price of body.prices) {
+          await tx.insert(ticketPrices)
             .values({
               ticketTypeId: defaultType.id,
-              currency: p.currency,
-              amountMinor: p.amountMinor,
+              currency: price.currency,
+              amountMinor: price.amountMinor,
               updatedAt: new Date(),
             })
             .onConflictDoNothing();
-          // Update existing row if present
-          await db
-            .update(ticketPrices)
-            .set({ amountMinor: p.amountMinor, updatedAt: new Date() })
-            .where(eq(ticketPrices.currency, p.currency));
+          await tx.update(ticketPrices)
+            .set({ amountMinor: price.amountMinor, updatedAt: new Date() })
+            .where(and(eq(ticketPrices.ticketTypeId, defaultType.id), eq(ticketPrices.currency, price.currency)));
         }
       }
-    }
+
+      const [afterSettings] = await tx.select().from(eventSettings).limit(1);
+      const afterRoutes = await tx.select().from(providerRoutes);
+      const afterPrices = await tx.select().from(ticketPrices);
+      await tx.insert(auditLog).values({
+        staffId: user.id,
+        action: "admin_settings_updated",
+        entityType: "event_configuration",
+        entityId: afterSettings?.id || "global",
+        oldState: { settings: beforeSettings ?? null, routes: beforeRoutes, prices: beforePrices },
+        newState: { settings: afterSettings ?? null, routes: afterRoutes, prices: afterPrices },
+        ipAddress: clientIp(req),
+        userAgent: req.headers.get("user-agent"),
+      });
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
