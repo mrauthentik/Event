@@ -34,6 +34,7 @@ async function sendSms(phone: string, message: string): Promise<boolean> {
   try {
     const res = await fetch("https://v3.api.termii.com/api/sms/send", {
       method: "POST",
+      signal: AbortSignal.timeout(10_000),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to: phone.replace(/^\+/, ""),
@@ -68,6 +69,7 @@ async function sendEmail(to: string, subject: string, html: string): Promise<boo
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
+      signal: AbortSignal.timeout(10_000),
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
@@ -110,4 +112,18 @@ export async function deliverTicket(payload: TicketDeliveryPayload): Promise<voi
       </div>`;
     await sendEmail(payload.email, `IHGC 2026 Ticket Confirmed — ${payload.refCode}`, html);
   }
+}
+
+export async function deliverTicketChannel(
+  payload: TicketDeliveryPayload,
+  channel: "sms" | "email",
+): Promise<boolean> {
+  if (channel === "sms") {
+    if (!payload.phoneE164) return false;
+    const message = `Horemow IHGC 2026: Your ticket for ${payload.attendeeName} is confirmed. Ref: ${payload.refCode}. Show your QR at the gate: ${payload.ticketUrl}`;
+    return sendSms(payload.phoneE164, message);
+  }
+  if (!payload.email) return false;
+  const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111320"><h2 style="color:#0E1020">Your IHGC 2026 Ticket is Confirmed</h2><p>Dear ${escapeHtml(payload.attendeeName)},</p><p>Your registration for the <strong>International Holiness General Conference 2026</strong> is confirmed.</p><p><strong>Reference Code:</strong> <code>${escapeHtml(payload.refCode)}</code></p><p><a href="${escapeHtml(payload.ticketUrl)}">View Your Ticket &amp; QR Code</a></p><p>Show this ticket at the registration stand on arrival. Keep your reference code handy.</p></div>`;
+  return sendEmail(payload.email, `IHGC 2026 Ticket Confirmed - ${payload.refCode}`, html);
 }

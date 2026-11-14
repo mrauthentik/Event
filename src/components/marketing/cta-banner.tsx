@@ -31,10 +31,10 @@ export function CtaBanner() {
       {/* Content */}
       <div className="relative z-20 max-w-3xl mx-auto px-6 space-y-6">
         <h2 className="text-3xl sm:text-4xl lg:text-[44px] font-extrabold text-white leading-[1.12] tracking-tight">
-          Prepare Your Soul For Eternity At The 2026 General Conference
+          International Holiness General Conference 2026
         </h2>
         <p className="text-base sm:text-lg text-gray-300 max-w-xl mx-auto">
-          Four days in God&apos;s holy presence. Connect with thousands of believers walking in holiness and truth.
+          &ldquo;Man and Satan in Contention Against the Holy God&rdquo; · 8–11 December · Kwali, Abuja
         </p>
         <div className="pt-2">
           <Link

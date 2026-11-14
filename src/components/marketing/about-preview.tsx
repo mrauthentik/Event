@@ -70,11 +70,11 @@ export function AboutPreview() {
             </h2>
 
             <p className="text-base text-[#6B7280] leading-relaxed">
-              {SITE_CONFIG.about.origins} {SITE_CONFIG.about.nature}
+              Horemow is a non-denominational Christian ministry. Additional background information is being prepared by the organizers.
             </p>
 
             <p className="text-sm text-[#6B7280] leading-relaxed">
-              {SITE_CONFIG.about.mission}
+              The official ministry profile will be added when its approved copy is available.
             </p>
 
             <div className="pt-2">

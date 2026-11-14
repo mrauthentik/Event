@@ -12,18 +12,32 @@ import {
 import { scannerDb, CachedAttendee } from "@/lib/offline/dexie-db";
 import { sounds } from "@/lib/audio/sound-effects";
 import { resolveScannedToken } from "@/lib/scanner/token-verifier";
-import { recordArrivalCheckIn, issueConferenceBooklet } from "@/lib/scanner/checkin-actions";
+import { recordArrivalCheckIn, recordGroupArrivalCheckIn, issueConferenceBooklet } from "@/lib/scanner/checkin-actions";
 import { useQrScanner } from "@/components/scanner/use-qr-scanner";
 import { ScanResultOverlay, ScanResult } from "@/components/scanner/scan-result-overlay";
 
 export default function StaffScannerPage() {
-  const [standId, setStandId] = useState("Gate A");
+  const [standId, setStandId] = useState("Registration Stand");
   const [isOnline, setIsOnline] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [cachedCount, setCachedCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
   const [scanResult, setScanResult] = useState<ScanResult>({ type: "idle" });
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    let active = true;
+    navigator.serviceWorker.register("/sw.js", { scope: "/" })
+      .then((registration) => navigator.serviceWorker.ready.then(() => {
+        if (active) registration.active?.postMessage({ type: "CACHE_SCANNER_SHELL" });
+      }))
+      .catch(() => {
+        // Online scanning still works when the browser blocks service workers.
+      });
+    return () => { active = false; };
+  }, []);
 
   const refreshCounts = useCallback(async () => {
     try {
@@ -38,6 +52,19 @@ export default function StaffScannerPage() {
   const processToken = useCallback(
     async (tokenString: string) => {
       const outcome = await resolveScannedToken(tokenString);
+
+      if (outcome.status === "group") {
+        sounds.playSuccess();
+        sounds.vibrate("success");
+        setScanResult({
+          type: "group",
+          orderId: outcome.orderId,
+          orderToken: outcome.token,
+          attendees: outcome.attendees,
+          checkedIn: false,
+        });
+        return;
+      }
 
       if (outcome.status !== "found") {
         sounds.playError();
@@ -100,6 +127,54 @@ export default function StaffScannerPage() {
     [standId, refreshCounts]
   );
 
+  const handleGroupCheckIn = useCallback(async (groupAttendees: CachedAttendee[], orderToken: string) => {
+    const orderId = groupAttendees[0]?.orderId;
+    if (!orderId) return;
+    try {
+      let updated: CachedAttendee[];
+      let message: string;
+      if (navigator.onLine) {
+        const response = await fetch("/api/scanner/group-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: orderToken, standId }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Group check-in could not be confirmed.");
+        const roster = new Map<string, { status: CachedAttendee["status"]; checkedInAt: string | null }>(
+          data.roster.map((entry: { attendeeId: string; status: CachedAttendee["status"]; checkedInAt: string | null }) => [
+            entry.attendeeId,
+            { status: entry.status, checkedInAt: entry.checkedInAt },
+          ])
+        );
+        updated = groupAttendees.map((attendee) => {
+          const latest = roster.get(attendee.attendeeId);
+          return latest
+            ? { ...attendee, status: latest.status, checkedInAt: latest.checkedInAt, checkedInStand: latest.checkedInAt ? standId : null }
+            : attendee;
+        });
+        await scannerDb.cachedAttendees.bulkPut(updated);
+        message = `${data.checkedInCount} checked in; ${data.alreadyCheckedInCount} were already checked in.`;
+      } else {
+        updated = await recordGroupArrivalCheckIn(groupAttendees, standId);
+        message = "Saved on this scanner. Group arrivals are queued to sync when online.";
+      }
+      sounds.playSuccess();
+      sounds.vibrate("success");
+      setScanResult({ type: "group", orderId, orderToken, attendees: updated, checkedIn: true, message });
+      refreshCounts();
+    } catch (error) {
+      setScanResult({
+        type: "group",
+        orderId,
+        orderToken,
+        attendees: groupAttendees,
+        checkedIn: false,
+        error: error instanceof Error ? error.message : "Group check-in failed. Try again.",
+      });
+    }
+  }, [standId, refreshCounts]);
+
   // Sync cache with server manifest & flush pending scans
   const handleFullSync = useCallback(async () => {
     if (!navigator.onLine) {
@@ -118,9 +193,19 @@ export default function StaffScannerPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ scans: unsynced }),
         });
-        if (syncRes.ok) {
-          await scannerDb.pendingScans.clear();
-        }
+        const syncData = await syncRes.json();
+        if (!syncRes.ok) throw new Error(syncData.error || "Scanner sync failed.");
+        const acknowledgedKeys = new Set<string>(
+          Array.isArray(syncData.results) ? syncData.results.map((result: { idempotencyKey: string }) => result.idempotencyKey) : []
+        );
+        const acknowledged = unsynced.filter((scan) => acknowledgedKeys.has(scan.idempotencyKey));
+        const acknowledgedIds = acknowledged.flatMap((scan) => scan.id === undefined ? [] : [scan.id]);
+        if (acknowledgedIds.length) await scannerDb.pendingScans.bulkDelete(acknowledgedIds);
+        setSyncMessage(
+          `Sync acknowledged ${acknowledged.length}/${unsynced.length}: ${syncData.processedCount} accepted, ${syncData.conflictsCount} conflict(s), ${syncData.rejectedCount} rejected.`
+        );
+      } else {
+        setSyncMessage("No pending scans. Refreshing the attendee list.");
       }
 
       const res = await fetch("/api/scanner/manifest");
@@ -132,7 +217,7 @@ export default function StaffScannerPage() {
 
       await refreshCounts();
     } catch (err: any) {
-      console.error("Sync error:", err);
+      setSyncMessage(err instanceof Error ? err.message : "Scanner sync failed. Pending scans remain on this device.");
     } finally {
       setSyncing(false);
     }
@@ -185,17 +270,15 @@ export default function StaffScannerPage() {
           <div className="font-extrabold text-[15px] tracking-tight">
             Gate Scanner
           </div>
-          <select
+          <label className="sr-only" htmlFor="scanner-stand">Registration stand identifier</label>
+          <input
+            id="scanner-stand"
             value={standId}
             onChange={(e) => setStandId(e.target.value)}
-            className="bg-white/5 text-[11px] font-bold text-[#5EEAD4] px-2.5 py-1.5 rounded-lg border border-white/10 ml-1 focus:outline-none focus:border-[#5EEAD4]/50"
-          >
-            <option>Gate A</option>
-            <option>Gate B</option>
-            <option>Men Gate</option>
-            <option>Women Gate</option>
-            <option>Express Groups</option>
-          </select>
+            maxLength={64}
+            className="w-40 bg-white/5 text-[11px] font-bold text-[#5EEAD4] px-2.5 py-1.5 rounded-lg border border-white/10 ml-1 focus:outline-none focus:border-[#5EEAD4]/50"
+            aria-label="Registration stand identifier; enter the organizer-assigned name"
+          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -336,6 +419,7 @@ export default function StaffScannerPage() {
         <div className="text-center text-[10px] text-gray-600 pt-1 font-mono">
           {cachedCount} attendees cached • {pendingCount} scans pending sync
         </div>
+        {syncMessage && <div role="status" className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-center text-[11px] text-gray-300">{syncMessage}</div>}
 
       </main>
 
@@ -347,6 +431,7 @@ export default function StaffScannerPage() {
         standId={standId}
         onDismiss={() => setScanResult({ type: "idle" })}
         onIssueBooklet={handleIssueBooklet}
+        onCheckInGroup={handleGroupCheckIn}
       />
     </div>
   );

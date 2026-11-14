@@ -15,6 +15,20 @@
       "when": 1794610000000,
       "tag": "0001_unique_ticket_price",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794610100000,
+      "tag": "0002_payment_checkout_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794610200000,
+      "tag": "0003_durable_notifications",
+      "breakpoints": true
     }
   ]
 }

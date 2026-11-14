@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   BookOpen,
   AlertTriangle,
+  MessageSquare,
 } from "lucide-react";
 import { SITE_CONFIG } from "@/config/site";
 
@@ -33,6 +34,7 @@ export default async function AdminLayout({
     { label: "Approvals", href: "/admin/approvals", icon: CheckCircle2 },
     { label: "Booklet Stock", href: "/admin/booklet-stock", icon: BookOpen },
     { label: "Conflicts", href: "/admin/conflicts", icon: AlertTriangle },
+    { label: "Messaging Queue", href: "/admin/messaging", icon: MessageSquare },
     { label: "Reports & Export", href: "/admin/export", icon: Download },
     { label: "Settings", href: "/admin/settings", icon: Settings },
   ];
@@ -92,9 +94,8 @@ export default async function AdminLayout({
             {SITE_CONFIG.eventTitle} • Management Console
           </div>
           <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              Gateways Active
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold">
+              Operations Console
             </span>
           </div>
         </header>

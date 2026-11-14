@@ -5,11 +5,14 @@ import { db } from "@/db";
 import { orders, webhookEvents } from "@/db/schema";
 import { paypal } from "@/lib/payments";
 import { fulfillVerifiedPayment } from "@/lib/payments/fulfill-order";
-import { createOrderAccessToken } from "@/lib/crypto/ed25519";
-import { deliverTicket } from "@/lib/messaging";
 
 export async function POST(req: NextRequest) {
+  const declaredLength = Number(req.headers.get("content-length") || 0);
+  if (declaredLength > 256 * 1024) return NextResponse.json({ error: "Webhook payload is too large." }, { status: 413 });
   const rawBody = await req.text();
+  if (new TextEncoder().encode(rawBody).byteLength > 256 * 1024) {
+    return NextResponse.json({ error: "Webhook payload is too large." }, { status: 413 });
+  }
   if (!(await paypal.verifyWebhookSignature(rawBody, req.headers))) {
     return NextResponse.json({ error: "Invalid webhook signature." }, { status: 401 });
   }
@@ -21,9 +24,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Malformed webhook payload." }, { status: 400 });
   }
 
-  const eventType = payload?.event_type;
+  const eventType = typeof payload?.event_type === "string" ? payload.event_type : "";
   const eventId = typeof payload?.id === "string" ? payload.id : "";
-  if (!eventType || !eventId) {
+  if (!/^[A-Z_.]{1,64}$/.test(eventType) || !/^[A-Za-z0-9_-]{1,255}$/.test(eventId)) {
     return NextResponse.json({ error: "Webhook event identifier is missing." }, { status: 400 });
   }
 
@@ -34,7 +37,27 @@ export async function POST(req: NextRequest) {
         provider: "paypal",
         eventType,
         providerEventId: eventId,
-        payload,
+        payload: {
+          id: eventId,
+          event_type: eventType,
+          resource: {
+            id: typeof payload.resource?.id === "string" ? payload.resource.id.slice(0, 255) : null,
+            status: typeof payload.resource?.status === "string" ? payload.resource.status.slice(0, 32) : null,
+            custom_id: typeof payload.resource?.custom_id === "string" ? payload.resource.custom_id.slice(0, 32) : null,
+            invoice_id: typeof payload.resource?.invoice_id === "string" ? payload.resource.invoice_id.slice(0, 32) : null,
+            supplementary_data: {
+              related_ids: {
+                order_id: typeof payload.resource?.supplementary_data?.related_ids?.order_id === "string"
+                  ? payload.resource.supplementary_data.related_ids.order_id.slice(0, 255)
+                  : null,
+              },
+            },
+            amount: {
+              value: typeof payload.resource?.amount?.value === "string" ? payload.resource.amount.value.slice(0, 32) : null,
+              currency_code: typeof payload.resource?.amount?.currency_code === "string" ? payload.resource.amount.currency_code.slice(0, 8) : null,
+            },
+          },
+        },
         signatureValid: true,
         processed: false,
       })
@@ -85,32 +108,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ received: true, ignored: true });
       }
 
-      const result = await fulfillVerifiedPayment({
+      await fulfillVerifiedPayment({
         orderId: order.id,
         provider: "paypal",
         verification,
         rawPayloadHash: crypto.createHash("sha256").update(rawBody).digest("hex"),
       });
-      if (result.fulfilled) {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-        const accessToken = await createOrderAccessToken(order.id);
-        for (const attendee of result.attendees) {
-          deliverTicket({
-            attendeeName: attendee.name,
-            refCode: attendee.refCode,
-            phoneE164: attendee.phoneE164,
-            email: attendee.email || order.payerEmail,
-            ticketUrl: `${appUrl}/ticket/${order.reference}?access=${encodeURIComponent(accessToken)}`,
-          }).catch((error) => console.error("Ticket delivery failed:", error));
-        }
-      }
     }
 
     await db.update(webhookEvents).set({ processed: true, processedAt: new Date() })
       .where(eq(webhookEvents.providerEventId, eventId));
     return NextResponse.json({ received: true });
   } catch (error) {
-    console.error("PayPal webhook processing failed:", error);
+    console.error("PayPal webhook processing failed.");
     return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });
   }
 }

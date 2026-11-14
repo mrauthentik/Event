@@ -60,6 +60,37 @@ export async function recordArrivalCheckIn(
   return updated;
 }
 
+/** Applies a group check-in locally as one IndexedDB transaction while queuing each attendee for atomic server sync. */
+export async function recordGroupArrivalCheckIn(
+  attendees: CachedAttendee[],
+  standId: string
+): Promise<CachedAttendee[]> {
+  const clientTimestamp = new Date().toISOString();
+  const eligibleIds = new Set(attendees.filter((attendee) => attendee.status === "confirmed").map((attendee) => attendee.attendeeId));
+  const updated = attendees.map((attendee) => eligibleIds.has(attendee.attendeeId)
+    ? { ...attendee, status: "checked_in" as const, checkedInAt: clientTimestamp, checkedInStand: standId }
+    : attendee
+  );
+  const pending: PendingScan[] = attendees
+    .filter((attendee) => eligibleIds.has(attendee.attendeeId))
+    .map((attendee) => ({
+      attendeeId: attendee.attendeeId,
+      scanType: "arrival",
+      standId,
+      staffId: STAFF_ID,
+      deviceId: DEVICE_ID,
+      clientTimestamp,
+      idempotencyKey: `group_arrival_${crypto.randomUUID()}`,
+      synced: false,
+    }));
+
+  await scannerDb.transaction("rw", scannerDb.cachedAttendees, scannerDb.pendingScans, async () => {
+    await scannerDb.cachedAttendees.bulkPut(updated);
+    if (pending.length) await scannerDb.pendingScans.bulkAdd(pending);
+  });
+  return updated;
+}
+
 /** Marks an attendee's booklet as issued and queues the booklet scan. */
 export async function issueConferenceBooklet(
   attendee: CachedAttendee,

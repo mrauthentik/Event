@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, or, like } from "drizzle-orm";
 import { db } from "@/db";
-import { orders, attendees, payments } from "@/db/schema";
+import { orders, attendees, notificationJobs, payments } from "@/db/schema";
 import { getPaymentProviderByName } from "@/lib/payments";
 import { fulfillVerifiedPayment } from "@/lib/payments/fulfill-order";
-import { createOrderAccessToken } from "@/lib/crypto/ed25519";
-import { deliverTicket } from "@/lib/messaging";
+import { buildTicketNotificationJobs } from "@/lib/messaging/outbox";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 const recoverSchema = z
@@ -76,18 +75,11 @@ export async function POST(req: NextRequest) {
       if (currentOrder?.status !== "paid") continue;
 
       const orderAttendees = await db.query.attendees.findMany({
-        where: (attendee, { eq }) => eq(attendee.orderId, currentOrder.id),
+        where: (attendee, { and, eq, isNull }) => and(eq(attendee.orderId, currentOrder.id), isNull(attendee.deletedAt)),
       });
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      const accessToken = await createOrderAccessToken(currentOrder.id);
-      for (const attendee of orderAttendees) {
-        deliverTicket({
-          attendeeName: attendee.name,
-          refCode: currentOrder.reference,
-          phoneE164: attendee.phoneE164,
-          email: attendee.email || currentOrder.payerEmail,
-          ticketUrl: `${appUrl}/ticket/${currentOrder.reference}?access=${encodeURIComponent(accessToken)}`,
-        }).catch((error) => console.error("Ticket delivery failed:", error));
+      const jobs = await buildTicketNotificationJobs(currentOrder, orderAttendees, { resend: true });
+      if (jobs.length) {
+        await db.insert(notificationJobs).values(jobs).onConflictDoNothing();
       }
     }
 

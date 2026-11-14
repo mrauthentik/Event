@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, bigint, boolean, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, bigint, boolean, timestamp, jsonb, index, text } from "drizzle-orm/pg-core";
 import { orderStatusEnum, paymentStatusEnum, paymentProviderEnum, currencyEnum } from "./enums";
 
 export const orders = pgTable(
@@ -38,6 +38,7 @@ export const payments = pgTable(
     provider: paymentProviderEnum("provider").notNull(),
     providerRef: varchar("provider_ref", { length: 255 }).notNull().unique(),
     providerCaptureId: varchar("provider_capture_id", { length: 255 }),
+    checkoutUrl: text("checkout_url"),
     status: paymentStatusEnum("status").notNull().default("initiated"),
     currency: currencyEnum("currency").notNull(),
     amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),

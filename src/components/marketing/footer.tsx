@@ -23,7 +23,7 @@ export function Footer() {
               />
             </div>
             <p className="text-sm text-gray-400 leading-relaxed max-w-sm pt-2">
-              Holiness Revival Movement Worldwide is a non-denominational end-time movement committed to reviving biblical righteousness, sanctification, and preparing believers across all nations for the rapture.
+              Horemow is a non-denominational Christian ministry. IHGC 2026 will take place at Holiness Campground, Kwali, Abuja, from 8 to 11 December.
             </p>
             <div className="pt-2 text-xs text-gray-400">
               <span className="font-semibold text-gray-300">Campground Location:</span> Behind FGC, Kwali, Abuja, Nigeria.
@@ -100,7 +100,7 @@ export function Footer() {
                   Terms & Refund Policy (Draft)
                 </Link>
                 <Link href="/privacy" className="hover:text-white transition-colors">
-                  Privacy Policy (NDPA)
+                  Privacy Notice (Draft)
                 </Link>
                 <Link href="/camp-info" className="hover:text-white transition-colors">
                   Campground & Accommodation

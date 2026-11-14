@@ -143,7 +143,7 @@ export async function PUT(req: NextRequest) {
         staffId: user.id,
         action: "admin_settings_updated",
         entityType: "event_configuration",
-        entityId: afterSettings?.id || "global",
+        entityId: String(afterSettings?.id ?? "global"),
         oldState: { settings: beforeSettings ?? null, routes: beforeRoutes, prices: beforePrices },
         newState: { settings: afterSettings ?? null, routes: afterRoutes, prices: afterPrices },
         ipAddress: clientIp(req),

@@ -4,4 +4,5 @@ export * from "./attendees";
 export * from "./scans";
 export * from "./auth";
 export * from "./settings";
+export * from "./jobs";
 

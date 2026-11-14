@@ -5,11 +5,14 @@ import { db } from "@/db";
 import { orders, webhookEvents } from "@/db/schema";
 import { paystack } from "@/lib/payments";
 import { fulfillVerifiedPayment } from "@/lib/payments/fulfill-order";
-import { createOrderAccessToken } from "@/lib/crypto/ed25519";
-import { deliverTicket } from "@/lib/messaging";
 
 export async function POST(req: NextRequest) {
+  const declaredLength = Number(req.headers.get("content-length") || 0);
+  if (declaredLength > 256 * 1024) return NextResponse.json({ error: "Webhook payload is too large." }, { status: 413 });
   const rawBody = await req.text();
+  if (new TextEncoder().encode(rawBody).byteLength > 256 * 1024) {
+    return NextResponse.json({ error: "Webhook payload is too large." }, { status: 413 });
+  }
   if (!(await paystack.verifyWebhookSignature(rawBody, req.headers))) {
     return NextResponse.json({ error: "Invalid webhook signature." }, { status: 401 });
   }
@@ -21,9 +24,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Malformed webhook payload." }, { status: 400 });
   }
 
-  const eventType = payload?.event;
+  const eventType = typeof payload?.event === "string" ? payload.event : "";
   const eventId = payload?.data?.id ? String(payload.data.id) : "";
-  if (!eventType || !eventId) {
+  if (!/^[A-Z_a-z.]{1,64}$/.test(eventType) || !/^[A-Za-z0-9_-]{1,255}$/.test(eventId)) {
     return NextResponse.json({ error: "Webhook event identifier is missing." }, { status: 400 });
   }
 
@@ -34,7 +37,16 @@ export async function POST(req: NextRequest) {
         provider: "paystack",
         eventType,
         providerEventId: eventId,
-        payload,
+        payload: {
+          id: eventId,
+          event: eventType,
+          data: {
+            reference: typeof payload.data?.reference === "string" ? payload.data.reference.slice(0, 32) : null,
+            status: typeof payload.data?.status === "string" ? payload.data.status.slice(0, 32) : null,
+            amount: Number.isSafeInteger(payload.data?.amount) ? payload.data.amount : null,
+            currency: typeof payload.data?.currency === "string" ? payload.data.currency.slice(0, 8) : null,
+          },
+        },
         signatureValid: true,
         processed: false,
       })
@@ -78,7 +90,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true, ignored: true });
     }
 
-    const result = await fulfillVerifiedPayment({
+    await fulfillVerifiedPayment({
       orderId: order.id,
       provider: "paystack",
       verification,
@@ -87,23 +99,9 @@ export async function POST(req: NextRequest) {
     await db.update(webhookEvents).set({ processed: true, processedAt: new Date() })
       .where(eq(webhookEvents.providerEventId, eventId));
 
-    if (result.fulfilled) {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      const accessToken = await createOrderAccessToken(order.id);
-      for (const attendee of result.attendees) {
-        deliverTicket({
-          attendeeName: attendee.name,
-          refCode: attendee.refCode,
-          phoneE164: attendee.phoneE164,
-          email: attendee.email || order.payerEmail,
-          ticketUrl: `${appUrl}/ticket/${order.reference}?access=${encodeURIComponent(accessToken)}`,
-        }).catch((error) => console.error("Ticket delivery failed:", error));
-      }
-    }
-
     return NextResponse.json({ received: true });
   } catch (error) {
-    console.error("Paystack webhook processing failed:", error);
+      console.error("Paystack webhook processing failed.");
     return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });
   }
 }

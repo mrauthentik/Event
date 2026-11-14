@@ -5,7 +5,6 @@ import { orders, payments } from "@/db/schema";
 import { getPaymentProviderByName, paypal } from "@/lib/payments";
 import { fulfillVerifiedPayment } from "@/lib/payments/fulfill-order";
 import { verifyOrderAccessToken } from "@/lib/crypto/ed25519";
-import { deliverTicket } from "@/lib/messaging";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 const noStore = { "Cache-Control": "private, no-store, max-age=0" };
@@ -80,6 +79,9 @@ export async function GET(
     if (
       verification.isSuccessful &&
       !verification.isPending &&
+      verification.providerRef === payment.providerRef &&
+      (payment.provider !== "paypal" || verification.orderReference === order.reference) &&
+      (payment.provider !== "paypal" || Boolean(verification.captureId)) &&
       verification.amountMinor === order.totalMinor &&
       verification.currency === order.currency
     ) {
@@ -88,16 +90,6 @@ export async function GET(
         provider: payment.provider === "paypal" ? "paypal" : "paystack",
         verification,
       });
-
-      for (const attendee of result.attendees) {
-        deliverTicket({
-          attendeeName: attendee.name,
-          refCode: attendee.refCode,
-          phoneE164: attendee.phoneE164,
-          email: attendee.email || order.payerEmail,
-          ticketUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/ticket/${order.reference}?access=${encodeURIComponent(ticketAccess)}`,
-        }).catch((err) => console.error("Ticket delivery failed:", err));
-      }
 
       const confirmed = result.fulfilled
         ? result.attendees

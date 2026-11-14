@@ -6,6 +6,7 @@ import { CachedAttendee } from "@/lib/offline/dexie-db";
 export type ScanResult =
   | { type: "idle" }
   | { type: "valid"; attendee: CachedAttendee; message: string }
+  | { type: "group"; orderId: string; orderToken: string; attendees: CachedAttendee[]; checkedIn: boolean; message?: string; error?: string }
   | { type: "already_checked_in"; attendee: CachedAttendee; message: string }
   | { type: "forged"; error: string };
 
@@ -14,6 +15,7 @@ interface ScanResultOverlayProps {
   standId: string;
   onDismiss: () => void;
   onIssueBooklet: (attendee: CachedAttendee) => void;
+  onCheckInGroup: (attendees: CachedAttendee[], orderToken: string) => void;
 }
 
 export function ScanResultOverlay({
@@ -21,8 +23,56 @@ export function ScanResultOverlay({
   standId,
   onDismiss,
   onIssueBooklet,
+  onCheckInGroup,
 }: ScanResultOverlayProps) {
   if (result.type === "idle") return null;
+
+  if (result.type === "group") {
+    const eligibleCount = result.attendees.filter((attendee) => attendee.status === "confirmed").length;
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col justify-between bg-[#064E3B] p-5 text-white animate-in zoom-in-95 duration-150 sm:p-6">
+        <div className="pt-4 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border-4 border-emerald-400 bg-emerald-400/20 text-emerald-300">
+            <CheckCircle2 className="h-9 w-9" />
+          </div>
+          <h2 className="pt-3 text-2xl font-black tracking-tight">Group Order Check-in</h2>
+          <p className="mt-1 text-sm text-emerald-100">
+            {result.message || (result.checkedIn ? "Group check-in recorded" : "Review every seat before checking in this order.")}
+          </p>
+          <div className="mt-1 font-mono text-xs text-emerald-200">{result.attendees.length} paid seats</div>
+        </div>
+
+        <div className="my-4 max-h-[48vh] overflow-y-auto rounded-2xl border border-white/15 bg-black/15 text-left">
+          {result.attendees.map((attendee) => {
+            const alreadyCheckedIn = attendee.status === "checked_in" || attendee.status === "booklet_issued";
+            return (
+              <div key={attendee.attendeeId} className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 last:border-b-0">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-bold">{attendee.name}</div>
+                  <div className="mt-0.5 font-mono text-[10px] text-emerald-100">{attendee.refCode}</div>
+                </div>
+                <div className={`shrink-0 text-[10px] font-bold ${alreadyCheckedIn ? "text-amber-200" : "text-emerald-200"}`}>
+                  {alreadyCheckedIn ? "ALREADY IN" : attendee.status === "confirmed" ? "READY" : "REVIEW"}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mx-auto w-full max-w-sm space-y-3 pb-2">
+          {result.error && <p className="rounded-lg bg-red-900/40 p-3 text-center text-xs text-red-100">{result.error}</p>}
+          {!result.checkedIn && eligibleCount > 0 && (
+            <button onClick={() => onCheckInGroup(result.attendees, result.orderToken)} className="w-full rounded-full bg-emerald-300 py-4 text-sm font-black tracking-wide text-[#064E3B] shadow-xl active:scale-[0.98]">
+              Check In {eligibleCount} Ready {eligibleCount === 1 ? "Attendee" : "Attendees"}
+            </button>
+          )}
+          <button onClick={onDismiss} className="w-full rounded-full bg-white/20 py-3.5 text-sm font-bold hover:bg-white/30">
+            {result.checkedIn || eligibleCount === 0 ? "Next Scan" : "Cancel"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (result.type === "valid") {
     return (

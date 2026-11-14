@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { attendees, auditLog, manualPayments, orders, payments } from "@/db/schema";
+import { attendees, auditLog, manualPayments, notificationJobs, orders, payments } from "@/db/schema";
 import { createTicketToken, getTicketSigningKey } from "@/lib/crypto/ed25519";
 import { clientIp } from "@/lib/rate-limit";
 import { requireRole } from "@/lib/auth/session";
 import { isSameOriginRequest } from "@/lib/security/origin";
+import { buildTicketNotificationJobs } from "@/lib/messaging/outbox";
 
 const approvalSchema = z.object({
   manualPaymentId: z.string().uuid(),
@@ -70,14 +71,18 @@ export async function POST(req: NextRequest) {
         });
 
         const orderAttendees = await tx.select().from(attendees).where(eq(attendees.orderId, order.id));
+        const confirmed = [];
         for (const attendee of orderAttendees) {
           const { tokenHash } = await createTicketToken(attendee.id, signingKey!);
-          await tx.update(attendees).set({
+          const [saved] = await tx.update(attendees).set({
             status: "confirmed",
             qrTokenHash: tokenHash,
             updatedAt: new Date(),
-          }).where(eq(attendees.id, attendee.id));
+          }).where(eq(attendees.id, attendee.id)).returning();
+          confirmed.push(saved);
         }
+        const jobs = await buildTicketNotificationJobs(order, confirmed);
+        if (jobs.length) await tx.insert(notificationJobs).values(jobs).onConflictDoNothing();
 
         await tx.insert(auditLog).values({
           staffId: user.id,

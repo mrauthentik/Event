@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { attendees, auditLog, eventSettings, orders, payments, scanEvents, ticketPrices, ticketTypes } from "@/db/schema";
+import { attendees, auditLog, eventSettings, notificationJobs, orders, payments, scanEvents, ticketPrices, ticketTypes } from "@/db/schema";
 import { CURRENCIES } from "@/config/currencies";
 import { generateRefCode } from "@/lib/crypto/ref-code";
 import { createOrderAccessToken, createTicketToken, getTicketSigningKey } from "@/lib/crypto/ed25519";
 import { requireRole } from "@/lib/auth/session";
 import { isSameOriginRequest } from "@/lib/security/origin";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { buildTicketNotificationJobs } from "@/lib/messaging/outbox";
 
 const walkInSchema = z.object({
   idempotencyKey: z.string().uuid(),
@@ -154,6 +155,11 @@ export async function POST(req: NextRequest) {
         result: "valid",
         notes: `Walk-in registration paid by ${input.paymentMethod.toUpperCase()}`,
       });
+
+      const jobs = await buildTicketNotificationJobs(order, [attendee], {
+        appUrl: process.env.NEXT_PUBLIC_APP_URL || (process.env.NODE_ENV !== "production" ? req.nextUrl.origin : undefined),
+      });
+      if (jobs.length) await tx.insert(notificationJobs).values(jobs).onConflictDoNothing();
 
       await tx.insert(auditLog).values({
         staffId: user.id,

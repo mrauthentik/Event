@@ -18,6 +18,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  manifest: "/manifest.json",
   title: {
     template: "%s | IHGC 2026 — Horemow",
     default: `${SITE_CONFIG.eventTitle} — ${SITE_CONFIG.shortBrandName}`,

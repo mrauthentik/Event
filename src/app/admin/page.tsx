@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { db } from "@/db";
 import { orders, attendees } from "@/db/schema";
-import { count, eq, sum } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { Users, Receipt, CreditCard, CheckCircle2, AlertCircle } from "lucide-react";
 import { formatMoneyMinor, SupportedCurrency } from "@/config/currencies";
 
@@ -20,15 +20,15 @@ export default async function AdminDashboardPage() {
   let paidOrdersList: any[] = [];
 
   try {
-    [totalAttendees] = await db.select({ value: count() }).from(attendees);
+    [totalAttendees] = await db.select({ value: count() }).from(attendees).where(isNull(attendees.deletedAt));
     [confirmedAttendees] = await db
       .select({ value: count() })
       .from(attendees)
-      .where(eq(attendees.status, "confirmed"));
+      .where(and(eq(attendees.status, "confirmed"), isNull(attendees.deletedAt)));
     [checkedInAttendees] = await db
       .select({ value: count() })
       .from(attendees)
-      .where(eq(attendees.status, "checked_in"));
+      .where(and(eq(attendees.status, "checked_in"), isNull(attendees.deletedAt)));
 
     [totalOrders] = await db.select({ value: count() }).from(orders);
     [paidOrders] = await db
@@ -79,7 +79,7 @@ export default async function AdminDashboardPage() {
 
       {!dbAvailable && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl px-4 py-3">
-          Database not connected — showing empty metrics. Set <code>DATABASE_URL</code> in <code>.env</code> and run <code>pnpm db:push</code>.
+          Database not connected — showing empty metrics. Set <code>DATABASE_URL</code> in <code>.env</code> and apply migrations with <code>pnpm db:migrate</code>.
         </div>
       )}
 
@@ -143,14 +143,14 @@ export default async function AdminDashboardPage() {
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
             <h2 className="text-base font-bold text-[#111320]">
-              Gross Settled Revenue (Per Currency)
+              Paid Order Totals (Per Currency)
             </h2>
             <p className="text-xs text-gray-400">
-              Amounts in minor units converted to standard display; never mixed across currencies.
+              Verified paid order amounts shown separately by currency; these are not provider settlement balances.
             </p>
           </div>
           <div className="text-xs font-semibold px-3 py-1 bg-gray-100 rounded-full text-gray-600">
-            Live Settlement
+            Database Totals
           </div>
         </div>
 
@@ -160,7 +160,7 @@ export default async function AdminDashboardPage() {
             <div className="text-xl font-extrabold text-[#111320] mt-1">
               {formatMoneyMinor(revenueByCurrency.NGN, "NGN")}
             </div>
-            <div className="text-[10px] text-gray-400 mt-0.5">via Paystack</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">NGN orders</div>
           </div>
 
           <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
@@ -168,7 +168,7 @@ export default async function AdminDashboardPage() {
             <div className="text-xl font-extrabold text-[#111320] mt-1">
               {formatMoneyMinor(revenueByCurrency.USD, "USD")}
             </div>
-            <div className="text-[10px] text-gray-400 mt-0.5">via PayPal</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">USD orders</div>
           </div>
 
           <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
@@ -176,7 +176,7 @@ export default async function AdminDashboardPage() {
             <div className="text-xl font-extrabold text-[#111320] mt-1">
               {formatMoneyMinor(revenueByCurrency.EUR, "EUR")}
             </div>
-            <div className="text-[10px] text-gray-400 mt-0.5">via PayPal</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">EUR orders</div>
           </div>
 
           <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
@@ -184,7 +184,7 @@ export default async function AdminDashboardPage() {
             <div className="text-xl font-extrabold text-[#111320] mt-1">
               {formatMoneyMinor(revenueByCurrency.GBP, "GBP")}
             </div>
-            <div className="text-[10px] text-gray-400 mt-0.5">via PayPal</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">GBP orders</div>
           </div>
         </div>
       </div>
@@ -204,7 +204,7 @@ export default async function AdminDashboardPage() {
           className="p-5 rounded-[16px] bg-white border border-gray-200 hover:border-gray-300 transition-colors shadow-2xs block space-y-1"
         >
           <div className="text-sm font-bold text-[#111320]">Manage Attendees →</div>
-          <div className="text-xs text-gray-500">Search attendee reference codes, process name substitutions, and inspect check-ins.</div>
+          <div className="text-xs text-gray-500">Search attendee reference codes and inspect current check-in and booklet status.</div>
         </Link>
       </div>
     </div>

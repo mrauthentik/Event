@@ -5,6 +5,13 @@ import {
   VerifyPaymentResult,
 } from "./provider.interface";
 
+function decimalToMinorUnits(value: unknown): number {
+  if (typeof value !== "string" || !/^\d+(?:\.\d{1,2})?$/.test(value)) return 0;
+  const [whole, fraction = ""] = value.split(".");
+  const amount = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  return Number.isSafeInteger(amount) ? amount : 0;
+}
+
 export class PayPalProvider implements PaymentProvider {
   private clientId: string;
   private clientSecret: string;
@@ -43,16 +50,18 @@ export class PayPalProvider implements PaymentProvider {
   async initializeCheckout(params: InitializeCheckoutParams): Promise<CheckoutSessionResult> {
     // If mock credentials or local development
     if (process.env.MOCK_PAYMENTS === "true" && process.env.NODE_ENV !== "production") {
+      const checkoutUrl = new URL(params.callbackUrl);
+      checkoutUrl.searchParams.set("ref", params.orderReference);
       return {
         provider: "paypal",
-        checkoutUrl: `/payment/status?ref=${params.orderReference}`,
+        checkoutUrl: checkoutUrl.toString(),
         providerRef: `PAYPAL-${params.orderReference}`,
         rawPayload: { mock: true },
       };
     }
 
     const token = await this.getAccessToken();
-    const majorAmount = (params.amountMinor / 100).toFixed(2);
+    const majorAmount = `${Math.floor(params.amountMinor / 100)}.${String(params.amountMinor % 100).padStart(2, "0")}`;
     const returnUrl = new URL(params.callbackUrl);
     returnUrl.searchParams.set("ref", params.orderReference);
     const cancelUrl = new URL(params.callbackUrl);
@@ -90,11 +99,12 @@ export class PayPalProvider implements PaymentProvider {
         "PayPal-Request-Id": `create_${params.orderReference}`,
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
     });
 
     const order = await response.json();
     if (!order.id) {
-      throw new Error(`PayPal order creation failed: ${JSON.stringify(order)}`);
+      throw new Error("PayPal order creation failed.");
     }
 
     const approveLink = order.links?.find((l: any) => l.rel === "approve")?.href;
@@ -127,6 +137,7 @@ export class PayPalProvider implements PaymentProvider {
         "Content-Type": "application/json",
         "PayPal-Request-Id": `capture_${paypalOrderId}`,
       },
+      signal: AbortSignal.timeout(10_000),
     });
 
     const data = await response.json();
@@ -151,6 +162,7 @@ export class PayPalProvider implements PaymentProvider {
       headers: {
         Authorization: `Bearer ${token}`,
       },
+      signal: AbortSignal.timeout(10_000),
     });
 
     const data = await response.json();
@@ -168,7 +180,7 @@ export class PayPalProvider implements PaymentProvider {
     const isPending = status === "PENDING" || captureStatus === "PENDING";
 
     const value = capture?.amount?.value || data.purchase_units?.[0]?.amount?.value || "0";
-    const amountMinor = Math.round(parseFloat(value) * 100);
+    const amountMinor = decimalToMinorUnits(value);
     const currency = (capture?.amount?.currency_code || data.purchase_units?.[0]?.amount?.currency_code || "USD").toUpperCase();
 
     return {

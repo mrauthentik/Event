@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { attendees, orders, scanEvents } from "@/db/schema";
+import { attendees, auditLog, orders, scanEvents } from "@/db/schema";
 import { requireRole } from "@/lib/auth/session";
 import { isSameOriginRequest } from "@/lib/security/origin";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
     let processedCount = 0;
     let conflictsCount = 0;
     let rejectedCount = 0;
+    const results: Array<{ idempotencyKey: string; result: "processed" | "conflict" | "rejected" | "duplicate" }> = [];
 
     await db.transaction(async (tx) => {
       for (const scan of parsed) {
@@ -53,7 +54,10 @@ export async function POST(req: NextRequest) {
           .from(scanEvents)
           .where(eq(scanEvents.idempotencyKey, idempotencyKey))
           .limit(1);
-        if (existing) continue;
+        if (existing) {
+          results.push({ idempotencyKey: scan.idempotencyKey, result: "duplicate" });
+          continue;
+        }
 
         const [record] = await tx
           .select({ attendee: attendees, orderStatus: orders.status })
@@ -66,12 +70,34 @@ export async function POST(req: NextRequest) {
         const attendee = record?.attendee;
         if (!attendee || attendee.deletedAt || record.orderStatus !== "paid") {
           rejectedCount++;
+          await tx.insert(auditLog).values({
+            staffId: user.id,
+            action: "scanner_sync_rejected",
+            entityType: "attendees",
+            entityId: scan.attendeeId,
+            oldState: null,
+            newState: { reason: "missing_deleted_or_unpaid_attendee", scanType: scan.scanType, idempotencyKey: scan.idempotencyKey },
+            ipAddress: ip === "unknown" ? null : ip,
+            userAgent: req.headers.get("user-agent"),
+          });
+          results.push({ idempotencyKey: scan.idempotencyKey, result: "rejected" });
           continue;
         }
 
         if (scan.scanType === "arrival") {
           if (attendee.status === "unconfirmed") {
             rejectedCount++;
+            await tx.insert(scanEvents).values({
+              attendeeId: attendee.id,
+              scanType: "arrival",
+              staffId: user.id,
+              standId: scan.standId,
+              clientTimestamp: scan.clientTime,
+              idempotencyKey,
+              result: "forged",
+              notes: "Paid attendee was not in a confirmed state during offline sync.",
+            });
+            results.push({ idempotencyKey: scan.idempotencyKey, result: "rejected" });
             continue;
           }
 
@@ -111,6 +137,7 @@ export async function POST(req: NextRequest) {
               notes: "Arrival synchronized from an offline scanner.",
             });
             processedCount++;
+            results.push({ idempotencyKey: scan.idempotencyKey, result: "processed" });
           } else {
             await tx.insert(scanEvents).values({
               attendeeId: attendee.id,
@@ -123,6 +150,7 @@ export async function POST(req: NextRequest) {
               notes: "A prior arrival was recorded with an earlier timestamp.",
             });
             conflictsCount++;
+            results.push({ idempotencyKey: scan.idempotencyKey, result: "conflict" });
           }
         } else {
           if (!attendee.checkedInAt || attendee.bookletIssuedAt || scan.clientTime < attendee.checkedInAt) {
@@ -141,6 +169,7 @@ export async function POST(req: NextRequest) {
                   : "Booklet timestamp precedes the attendee arrival timestamp.",
             });
             conflictsCount++;
+            results.push({ idempotencyKey: scan.idempotencyKey, result: "conflict" });
             continue;
           }
 
@@ -166,6 +195,7 @@ export async function POST(req: NextRequest) {
             notes: "Booklet issuance synchronized from an offline scanner.",
           });
           processedCount++;
+          results.push({ idempotencyKey: scan.idempotencyKey, result: "processed" });
         }
       }
     });
@@ -175,6 +205,7 @@ export async function POST(req: NextRequest) {
       processedCount,
       conflictsCount,
       rejectedCount,
+      results,
       serverTimestamp: new Date().toISOString(),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

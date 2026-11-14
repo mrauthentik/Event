@@ -229,7 +229,7 @@ export default function StaffLookupPage() {
                   Execute {overrideAction.replace(/_/g, " ")}
                 </h3>
                 <p className="text-xs text-gray-500">
-                  This action will be permanently recorded into the immutable audit trail.
+                  This action will be recorded in the audit log with your reason and stand identifier.
                 </p>
               </div>
 

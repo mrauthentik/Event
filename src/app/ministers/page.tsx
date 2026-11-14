@@ -23,7 +23,7 @@ export default function MinistersPage() {
             Featured Ministers
           </h1>
           <p className="text-gray-300 max-w-xl mx-auto text-sm sm:text-base">
-            Declared messengers of righteousness and sanctification ministering at IHGC 2026.
+            Pastor Paul Rika and Evang. Linda Paul Rika are the featured ministers named for IHGC 2026.
           </p>
         </div>
       </section>
@@ -37,10 +37,11 @@ export default function MinistersPage() {
               name={minister.name}
               role={minister.role}
               bio={minister.bio}
-              image={minister.image}
+              image={minister.listingImage || undefined}
               socials={{
                 youtube: SITE_CONFIG.socials.youtube,
                 facebook: SITE_CONFIG.socials.facebook,
+                x: SITE_CONFIG.socials.x,
               }}
             />
           ))}

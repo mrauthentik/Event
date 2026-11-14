@@ -6,7 +6,7 @@ export interface MinisterProps {
   name: string;
   role: string;
   bio: string;
-  image: string;
+  image?: string;
   socials?: {
     youtube?: string;
     facebook?: string;
@@ -20,12 +20,13 @@ export function MinisterCard({ name, role, bio, image, socials }: MinisterProps)
     <div className="bg-white rounded-[24px] overflow-hidden shadow-[0_4px_25px_rgba(0,0,0,0.06)] border border-gray-100/80 grid grid-cols-1 md:grid-cols-12 transition-transform duration-300 hover:-translate-y-1">
       {/* Left half: Full-bleed portrait image */}
       <div className="md:col-span-5 relative min-h-[320px] md:min-h-full aspect-[4/5] bg-gray-100">
-        <Image
-          src={image}
-          alt={name}
-          fill
-          className="object-cover object-top"
-        />
+        {image ? (
+          <Image src={image} alt={name} fill className="object-cover object-top" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-[#F3F4F6] p-6 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Photo needed: {name}, unique portrait for this page
+          </div>
+        )}
       </div>
 
       {/* Right half: Content */}
@@ -78,7 +79,7 @@ export function MinisterCard({ name, role, bio, image, socials }: MinisterProps)
             </a>
           )}
           <span className="text-xs text-gray-400 font-medium pl-1">
-            Official Ministry Channel
+            Horemow social channel
           </span>
         </div>
       </div>
@@ -97,11 +98,11 @@ export function MoreMinistersCard() {
           More Ministers To Be Announced
         </h4>
         <p className="text-sm text-[#6B7280]">
-          Additional international guest speakers and choir directors will be confirmed as the conference date approaches.
+          Additional minister names and profiles will appear here when supplied by the organizers.
         </p>
       </div>
       <div className="inline-flex items-center text-xs font-semibold uppercase tracking-wider text-[#0E7A6E] bg-white px-4 py-2 rounded-full shadow-sm">
-        Stay Tuned
+        Information pending
       </div>
     </div>
   );

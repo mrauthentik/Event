@@ -6,7 +6,7 @@ import { ArrowLeft, UserPlus, CheckCircle2, AlertCircle, Banknote, CreditCard, Q
 import { formatMoneyMinor } from "@/config/currencies";
 
 export default function WalkInRegistrationPage() {
-  const [standId, setStandId] = useState("Gate A");
+  const [standId, setStandId] = useState("Registration Stand");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("+234 ");
   const [state, setState] = useState("FCT Abuja");

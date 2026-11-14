@@ -28,7 +28,7 @@ export default function AdminExportPage() {
         <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between text-xs text-gray-600">
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-gray-400" />
-            <span>Export action is recorded with operator IP into the immutable audit log.</span>
+            <span>Export action is recorded with the operator IP in the audit log.</span>
           </div>
           <a
             href="/api/admin/export"

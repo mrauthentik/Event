@@ -16,6 +16,16 @@ export default function RegisterPage() {
   // Mode: Individual vs Group
   const [isGroup, setIsGroup] = useState(false);
   const [currency, setCurrency] = useState<SupportedCurrency>("NGN");
+  const [pricesMinor, setPricesMinor] = useState<Record<SupportedCurrency, number>>({
+    NGN: CURRENCIES.NGN.standardPriceMinor,
+    USD: CURRENCIES.USD.standardPriceMinor,
+    EUR: CURRENCIES.EUR.standardPriceMinor,
+    GBP: CURRENCIES.GBP.standardPriceMinor,
+  });
+  const [currencyAvailable, setCurrencyAvailable] = useState<Record<SupportedCurrency, boolean>>({ NGN: true, USD: true, EUR: true, GBP: true });
+  const [providerByCurrency, setProviderByCurrency] = useState<Record<SupportedCurrency, string>>({ NGN: "paystack", USD: "paypal", EUR: "paypal", GBP: "paypal" });
+  const [registrationOpen, setRegistrationOpen] = useState(true);
+  const [configState, setConfigState] = useState<"loading" | "ready" | "error">("loading");
 
   // Form State
   const [payerName, setPayerName] = useState("");
@@ -32,6 +42,26 @@ export default function RegisterPage() {
   const [consent, setConsent] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const turnstileRef = useRef<HTMLDivElement | null>(null);
+  const checkoutAttempt = useRef<{ payload: string; key: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/registration/config", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Registration configuration is unavailable.");
+        for (const code of ["NGN", "USD", "EUR", "GBP"] as const) {
+          if (!Number.isSafeInteger(data.pricesMinor?.[code]) || data.pricesMinor[code] <= 0 || typeof data.currencyAvailable?.[code] !== "boolean") {
+            throw new Error("Registration configuration is invalid.");
+          }
+        }
+        setPricesMinor(data.pricesMinor);
+        setCurrencyAvailable(data.currencyAvailable);
+        setProviderByCurrency(data.providerByCurrency);
+        setRegistrationOpen(Boolean(data.registrationOpen));
+        setConfigState("ready");
+      })
+      .catch(() => setConfigState("error"));
+  }, []);
 
   // Status
   const [loading, setLoading] = useState(false);
@@ -92,10 +122,10 @@ export default function RegisterPage() {
     } catch (_) {}
   };
 
-  const currentCurrencyConfig = CURRENCIES[currency];
   const effectiveSeats = isGroup ? seatsCount : 1;
-  const totalMinor = effectiveSeats * currentCurrencyConfig.standardPriceMinor;
+  const totalMinor = effectiveSeats * pricesMinor[currency];
   const formattedTotal = formatMoneyMinor(totalMinor, currency);
+  const checkoutProvider = providerByCurrency[currency] === "paystack" ? "Paystack" : "PayPal";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,25 +144,32 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
+      const checkoutPayload = {
+        currency,
+        isGroup,
+        payerName,
+        payerPhone: payerPhone.trim(),
+        payerEmail: payerEmail.trim() || undefined,
+        country,
+        state: country === "Nigeria" ? state : undefined,
+        parish: parish || undefined,
+        isMinor,
+        guardianName: isMinor ? guardianName : undefined,
+        guardianPhone: isMinor ? guardianPhone : undefined,
+        groupName: isGroup ? groupName : undefined,
+        groupSeatsCount: isGroup ? seatsCount : 1,
+        turnstileToken: turnstileToken || undefined,
+        consent,
+      };
+      const serializedPayload = JSON.stringify(checkoutPayload);
+      if (!checkoutAttempt.current || checkoutAttempt.current.payload !== serializedPayload) {
+        checkoutAttempt.current = { payload: serializedPayload, key: crypto.randomUUID() };
+      }
+
       const res = await fetch("/api/checkout/initialize", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currency,
-          isGroup,
-          payerName,
-          payerPhone: payerPhone.trim(),
-          payerEmail: payerEmail.trim() || undefined,
-          country,
-          state: country === "Nigeria" ? state : undefined,
-          parish: parish || undefined,
-          isMinor,
-          guardianName: isMinor ? guardianName : undefined,
-          guardianPhone: isMinor ? guardianPhone : undefined,
-          groupName: isGroup ? groupName : undefined,
-          groupSeatsCount: isGroup ? seatsCount : 1,
-          turnstileToken: turnstileToken || undefined,
-        }),
+        headers: { "Content-Type": "application/json", "Idempotency-Key": checkoutAttempt.current.key },
+        body: serializedPayload,
       });
 
       const data = await res.json();
@@ -150,6 +187,7 @@ export default function RegisterPage() {
 
       // Clear draft on successful initiation
       localStorage.removeItem("ihgc_draft_registration");
+      checkoutAttempt.current = null;
 
       // Redirect to hosted payment checkout
       if (data.checkoutUrl) {
@@ -228,6 +266,7 @@ export default function RegisterPage() {
                 <button
                   key={c}
                   type="button"
+                  disabled={configState !== "ready" || !currencyAvailable[c]}
                   onClick={() => setCurrency(c)}
                   className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
                     currency === c
@@ -501,6 +540,9 @@ export default function RegisterPage() {
                 <span>{error}</span>
               </div>
             )}
+            {configState === "error" && <p role="alert" className="text-xs text-red-700">Registration pricing could not be loaded. Refresh this page or contact the helpline.</p>}
+            {configState === "ready" && !registrationOpen && <p role="status" className="text-xs text-amber-800">Online registration is closed.</p>}
+            {configState === "ready" && currencyAvailable[currency] === false && <p role="status" className="text-xs text-amber-800">Checkout is unavailable for {currency} right now.</p>}
 
             {/* Total Summary & Pay Button */}
             <div className="pt-4 border-t border-gray-100 space-y-3">
@@ -515,14 +557,14 @@ export default function RegisterPage() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || configState !== "ready" || !currencyAvailable[currency] || !registrationOpen}
                 className="w-full flex items-center justify-center gap-2.5 py-3.5 px-6 rounded-full bg-[#0E1020] hover:bg-[#1A1D36] text-white font-bold text-sm tracking-wide transition-all duration-200 active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-md"
               >
                 <Lock className="w-4 h-4 text-[#8EE3D6]" />
                 <span>
                   {loading
                     ? "Initializing Secure Checkout..."
-                    : `Pay ${formattedTotal} via ${currency === "NGN" ? "Paystack" : "PayPal"}`}
+                    : `Pay ${formattedTotal} via ${checkoutProvider}`}
                 </span>
               </button>
 

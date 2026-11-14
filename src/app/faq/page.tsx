@@ -17,7 +17,7 @@ export default function FaqPage() {
     },
     {
       q: "Are accommodation and meals included in the registration fee?",
-      a: "No. Accommodation and meals are NOT included. All attendees are required to arrange their own lodging in Kwali or nearby Gwagwalada, and purchase meals from the approved food vendors operating on the campground.",
+      a: "No. Accommodation and meals are not included. Attendees must arrange their own accommodation and food. The organizers have not provided lodging or meal details.",
     },
     {
       q: "Can I register a whole group, family, or church parish together?",
@@ -29,15 +29,15 @@ export default function FaqPage() {
     },
     {
       q: "How do I receive my ticket and QR code?",
-      a: "Your ticket with your high-contrast QR code is displayed immediately on your screen upon payment confirmation. You can download it as an image (PNG) or PDF. We also queue an SMS with your reference code to your phone number.",
+      a: "After payment is confirmed, your ticket and QR code are available on screen. Keep that page or your reference code available. SMS delivery is also attempted; use the ticket recovery page if you need help.",
     },
     {
       q: "What if money was deducted from my account but I didn't see my ticket?",
-      a: "Do not pay twice! Visit the 'Resend My Ticket' page or use the lookup tool on the site with your reference code or phone number. Our system will query the payment gateway directly, verify the transaction, and issue your ticket instantly.",
+      a: "Do not pay again immediately. Use the ticket recovery page with your reference code, phone number, or email. The system checks the payment provider and returns a generic response while any matching paid ticket is retried.",
     },
     {
       q: "What is the refund and cancellation policy?",
-      a: "Registration fees are strictly non-refundable once payment is confirmed. Exceptions are made for duplicate payments caused by gateway glitches or verified system errors. Name substitutions are permitted free of charge before the substitution deadline.",
+      a: "The interim refund and substitution policy is still a draft pending organizer review. Read the Terms & Refund Policy (Draft) page for the current draft.",
     },
     {
       q: "When does the conference start and when does registration close?",
@@ -63,7 +63,7 @@ export default function FaqPage() {
             Questions & Answers
           </h1>
           <p className="text-gray-300 max-w-xl mx-auto text-sm sm:text-base">
-            Find quick answers about registration, payments, Kwali accommodation, and tickets.
+            Find confirmed information about registration, event dates, and tickets.
           </p>
         </div>
       </section>

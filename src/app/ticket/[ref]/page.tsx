@@ -6,11 +6,11 @@ import { Footer } from "@/components/marketing/footer";
 import { QrView } from "@/components/ticket/qr-view";
 import { OrderQrCard } from "@/components/ticket/order-qr-card";
 import { db } from "@/db";
-import { groups } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { attendees, groups } from "@/db/schema";
+import { and, eq, isNull } from "drizzle-orm";
 import { SITE_CONFIG } from "@/config/site";
 import { Calendar, MapPin, Printer, ShieldCheck, Share2 } from "lucide-react";
-import { createTicketToken, getTicketSigningKey, verifyOrderAccessToken } from "@/lib/crypto/ed25519";
+import { createGroupOrderToken, createTicketToken, getTicketSigningKey, verifyOrderAccessToken } from "@/lib/crypto/ed25519";
 
 export const metadata = {
   title: "My Conference Ticket | IHGC 2026",
@@ -42,9 +42,8 @@ export default async function TicketPage({
   }
 
   // Lookup attendees
-  const orderAttendees = await db.query.attendees.findMany({
-    where: (a, { eq }) => eq(a.orderId, order.id),
-  });
+  const orderAttendees = await db.select().from(attendees)
+    .where(and(eq(attendees.orderId, order.id), isNull(attendees.deletedAt)));
 
   const signingKey = getTicketSigningKey();
 
@@ -63,6 +62,9 @@ export default async function TicketPage({
       };
     })
   );
+  const groupOrderToken = order.isGroup
+    ? await createGroupOrderToken(order.id, ticketsWithTokens.length, signingKey)
+    : null;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F3F4F6]">
@@ -175,7 +177,7 @@ export default async function TicketPage({
           ))}
 
           {/* Order-level QR for express group check-in */}
-          <OrderQrCard orderReference={order.reference} isGroup={order.isGroup} />
+          {groupOrderToken && <OrderQrCard orderReference={order.reference} token={groupOrderToken} />}
 
           {/* Group leader dashboard link */}
           {group && (

@@ -3,7 +3,7 @@ import Image from "next/image";
 import { Header } from "@/components/marketing/header";
 import { Footer } from "@/components/marketing/footer";
 import { SITE_CONFIG } from "@/config/site";
-import { Calendar, Clock, MapPin, Users, Flame, BookMarked, Bell, Download } from "lucide-react";
+import { Calendar, MapPin, Users, Download } from "lucide-react";
 import { Reveal } from "@/components/ui/reveal";
 import { Parallax } from "@/components/ui/parallax";
 
@@ -21,7 +21,7 @@ export default function ConferencePage() {
       <section className="bg-[#0E1020] text-white py-16 sm:py-20 relative overflow-hidden">
         <div className="max-w-[1240px] mx-auto px-6 sm:px-8 text-center space-y-4">
           <span className="text-xs font-bold uppercase tracking-widest text-[#8EE3D6]">
-            Annual Convocation
+            Conference Facts
           </span>
           <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
             International Holiness General Conference 2026
@@ -46,7 +46,7 @@ export default function ConferencePage() {
               <div>
                 <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Dates</div>
                 <div className="text-base font-bold text-[#111320] mt-0.5">8 – 11 Dec 2026</div>
-                <div className="text-xs text-gray-500">Tue 4:00 PM – Fri night</div>
+                <div className="text-xs text-gray-500">Opening: Tuesday at 4:00 PM WAT</div>
               </div>
             </div>
 
@@ -67,7 +67,7 @@ export default function ConferencePage() {
               </div>
               <div>
                 <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Registration</div>
-                <div className="text-base font-bold text-[#111320] mt-0.5">₦5,000 / $20</div>
+                <div className="text-base font-bold text-[#111320] mt-0.5">₦5,000 / $20 / €20 / £20</div>
                 <div className="text-xs text-gray-500">Flat rate for every attendee</div>
               </div>
             </div>
@@ -95,7 +95,7 @@ export default function ConferencePage() {
                   International Holiness General Conference 2026
                 </h2>
                 <p className="text-sm text-[#6B7280] leading-relaxed">
-                  &ldquo;{SITE_CONFIG.theme}&rdquo; — Join thousands of believers from 8 to 11 December 2026 at the Holiness Campground, Kwali, Abuja. Download or share the official conference flyer with your parish.
+                  &ldquo;{SITE_CONFIG.theme}&rdquo; — 8 to 11 December 2026 at Holiness Campground, behind FGC, Kwali, Abuja.
                 </p>
                 <div className="flex flex-wrap items-center gap-4 pt-2">
                   <a
@@ -118,53 +118,26 @@ export default function ConferencePage() {
           </div>
           </Reveal>
 
-          {/* Theme Exposition */}
+          {/* Theme exposition: organizer copy pending */}
           <Reveal delay={150}>
           <div className="space-y-6">
             <h2 className="text-2xl sm:text-3xl font-bold text-[#111320]">
               The Theme: &ldquo;{SITE_CONFIG.theme}&rdquo;
             </h2>
-            <div className="prose prose-gray max-w-none space-y-4 text-base text-[#6B7280] leading-relaxed">
-              <p>
-                From the dawn of creation, Satan has waged an relentless war against the holiness, sovereignty, and commandments of God, deceiving humanity and inciting mankind to rebel against their Maker. In these critical end times, this contention has intensified through apostasy, false teachings, moral decline, and compromise even within the church.
-              </p>
-              <p>
-                The 2026 International Holiness General Conference is convened to uncover the subtle devices of the adversary, call believers back to unbroken communion with God, and establish the body of Christ upon the solid rock of absolute biblical truth and uncompromising holiness.
-              </p>
+            <div className="rounded-[18px] border border-amber-200 bg-amber-50 p-6 text-sm leading-relaxed text-amber-950">
+              The theme is confirmed. An approved theme exposition has not yet been supplied by the organizers.
             </div>
           </div>
           </Reveal>
 
-          {/* What to Expect */}
+          {/* Programme status */}
           <Reveal delay={200}>
           <div className="space-y-6">
             <h2 className="text-2xl sm:text-3xl font-bold text-[#111320]">
-              What to Expect
+              Programme
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <div className="p-6 rounded-[18px] bg-white border border-gray-200/80 shadow-2xs space-y-3">
-                <Flame className="w-6 h-6 text-[#0E7A6E]" />
-                <h3 className="font-bold text-[#111320]">Holy Spirit Revivals</h3>
-                <p className="text-sm text-[#6B7280]">
-                  Powerful morning and evening ministrations focused on inward sanctification, personal repentance, and spiritual breakthrough.
-                </p>
-              </div>
-
-              <div className="p-6 rounded-[18px] bg-white border border-gray-200/80 shadow-2xs space-y-3">
-                <BookMarked className="w-6 h-6 text-[#0E7A6E]" />
-                <h3 className="font-bold text-[#111320]">Deep Bible Teachings</h3>
-                <p className="text-sm text-[#6B7280]">
-                  Line-by-line scriptural exposition delivered by Pastor Paul Rika and anointed guest ministers.
-                </p>
-              </div>
-
-              <div className="p-6 rounded-[18px] bg-white border border-gray-200/80 shadow-2xs space-y-3">
-                <Bell className="w-6 h-6 text-[#0E7A6E]" />
-                <h3 className="font-bold text-[#111320]">Restitution & Prayer</h3>
-                <p className="text-sm text-[#6B7280]">
-                  Practical sessions and counseling for believers resolving long-standing restitution matters according to scripture.
-                </p>
-              </div>
+            <div className="rounded-[18px] border border-gray-200 bg-[#F8FAFC] p-6 text-sm leading-relaxed text-[#6B7280]">
+              The official programme booklet will be available at the conference on 8 December 2026. Session details have not been supplied.
             </div>
           </div>
           </Reveal>
@@ -176,7 +149,7 @@ export default function ConferencePage() {
               Important Planning Notice for Attendees
             </h3>
             <p className="text-sm text-[#0E7A6E] leading-relaxed">
-              Registration fees (₦5,000 / $20 / €20 / £20) cover your conference pass, materials, and conference badge. <strong>Accommodation and meals are NOT included.</strong> Attendees are advised to make personal arrangements for their lodging in Kwali or neighboring Gwagwalada, and budget for food at camp food stands.
+              Registration is a flat fee of ₦5,000 / $20 / €20 / £20 per attendee. <strong>Accommodation and meals are not included.</strong> Attendees must arrange their own accommodation and food.
             </p>
             <div className="pt-2">
               <Link href="/camp-info" className="text-xs font-bold text-[#0E1020] underline hover:text-[#0E7A6E]">

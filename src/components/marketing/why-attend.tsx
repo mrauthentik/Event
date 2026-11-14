@@ -6,19 +6,16 @@ import { Parallax } from "@/components/ui/parallax";
 export function WhyAttend() {
   const points = [
     {
-      title: "Reviving Biblical Righteousness",
-      description:
-        "Deep, uncompromised exposition of scripture on inward and outward holiness, complete sanctification, and Christian perfection.",
+      title: "Conference Theme",
+      description: "Man and Satan in Contention Against the Holy God.",
     },
     {
-      title: "Preparing for the Rapture",
-      description:
-        "Clear end-time prophetic insights to align your personal walk and family life with the holy demands of God before the trumpet sounds.",
+      title: "Four Conference Days",
+      description: "Tuesday 8 December through Friday 11 December 2026. The opening is at 4:00 PM WAT.",
     },
     {
-      title: "Deliverance, Healing & Restitution",
-      description:
-        "Practical spiritual guidance and prayer ministry to walk in freedom, make biblically sound restitution, and receive divine restoration.",
+      title: "Kwali, Abuja",
+      description: "The conference venue is Holiness Campground, behind FGC, Kwali, Abuja, Nigeria.",
     },
   ];
 
@@ -34,7 +31,7 @@ export function WhyAttend() {
             </h2>
             
             <p className="text-base text-[#6B7280] leading-relaxed">
-              This four-day holy convocation at the Holiness Campground in Kwali, Abuja brings together believers, ministers, and seekers from across the world under the direct ministry of the Holy Spirit.
+              The International Holiness General Conference 2026 takes place from 8 to 11 December at Holiness Campground, Kwali, Abuja.
             </p>
 
             {/* Bullet items with mint arrow-chevrons */}

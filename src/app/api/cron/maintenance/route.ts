@@ -4,8 +4,7 @@ import { db } from "@/db";
 import { attendees, orders, payments } from "@/db/schema";
 import { getPaymentProviderByName } from "@/lib/payments";
 import { fulfillVerifiedPayment } from "@/lib/payments/fulfill-order";
-import { createOrderAccessToken } from "@/lib/crypto/ed25519";
-import { deliverTicket } from "@/lib/messaging";
+import { processNotificationQueue } from "@/lib/messaging/worker";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +14,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const results = { expired: 0, reconciled: 0, stillPending: 0, errors: 0 };
+  const results = { expired: 0, reconciled: 0, stillPending: 0, notificationClaimed: 0, notificationDelivered: 0, notificationRetried: 0, notificationDead: 0, errors: 0 };
+
+  // Process the bounded notification batch before slower provider reconciliation calls.
+  try {
+    const queue = await processNotificationQueue();
+    results.notificationClaimed = queue.claimed;
+    results.notificationDelivered = queue.delivered;
+    results.notificationRetried = queue.retried;
+    results.notificationDead = queue.dead;
+  } catch {
+    console.error("[cron] ticket notification processing failed.");
+    results.errors++;
+  }
 
   try {
     const staleOrders = await db
@@ -70,17 +81,6 @@ export async function GET(req: NextRequest) {
           });
           if (!result.fulfilled) continue;
 
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-          const accessToken = await createOrderAccessToken(order.id);
-          for (const attendee of result.attendees) {
-            deliverTicket({
-              attendeeName: attendee.name,
-              refCode: attendee.refCode,
-              phoneE164: attendee.phoneE164,
-              email: attendee.email || order.payerEmail,
-              ticketUrl: `${appUrl}/ticket/${order.reference}?access=${encodeURIComponent(accessToken)}`,
-            }).catch(() => {});
-          }
           results.reconciled++;
         } else if (verification.isPending) {
           results.stillPending++;

@@ -14,8 +14,28 @@ import { Parallax } from "@/components/ui/parallax";
 import { SITE_CONFIG } from "@/config/site";
 
 export default function HomePage() {
+  const eventStructuredData = {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: SITE_CONFIG.eventTitle,
+    description: "Theme: " + SITE_CONFIG.theme,
+    startDate: SITE_CONFIG.startsAt,
+    endDate: "2026-12-11",
+    eventStatus: "https://schema.org/EventScheduled",
+    eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
+    location: {
+      "@type": "Place",
+      name: SITE_CONFIG.venue.name,
+      address: SITE_CONFIG.venue.landmark + ", " + SITE_CONFIG.venue.location,
+    },
+    organizer: {
+      "@type": "Organization",
+      name: SITE_CONFIG.ministry,
+    },
+  };
   return (
     <div className="min-h-screen flex flex-col bg-white">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(eventStructuredData) }} />
       {/* 55px Slim Header */}
       <Header />
 
@@ -33,13 +53,13 @@ export default function HomePage() {
         <div className="max-w-[1240px] mx-auto px-6 sm:px-8">
           <div className="text-center max-w-2xl mx-auto mb-14 space-y-2">
             <span className="text-xs font-bold uppercase tracking-wider text-[#0E7A6E]">
-              Anointed Ministry
+              Featured Ministers
             </span>
             <h2 className="text-3xl sm:text-4xl font-bold text-[#111320] tracking-tight">
               Featured Ministers
             </h2>
             <p className="text-sm text-[#6B7280]">
-              Ministers called by God to declare the unadulterated word of holiness and truth
+              Pastor Paul Rika and Evang. Linda Paul Rika are featured at IHGC 2026.
             </p>
           </div>
 

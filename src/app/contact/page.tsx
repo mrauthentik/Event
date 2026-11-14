@@ -1,6 +1,6 @@
 import { Header } from "@/components/marketing/header";
 import { Footer } from "@/components/marketing/footer";
-import { Phone, MessageCircle, MapPin, Mail, Clock } from "lucide-react";
+import { Phone, MessageCircle, MapPin } from "lucide-react";
 import { SITE_CONFIG } from "@/config/site";
 
 export const metadata = {
@@ -20,7 +20,7 @@ export default function ContactPage() {
             Get In Touch
           </span>
           <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight mt-1">
-            Contact Support & Protocol
+            Contact the Conference
           </h1>
           <p className="text-gray-300 max-w-xl mx-auto text-sm sm:text-base">
             Have an inquiry regarding registration, arrival at Kwali Campground, or group bookings?
@@ -42,7 +42,7 @@ export default function ContactPage() {
                 </div>
                 <h3 className="font-bold text-[#111320] text-lg">Telephone Helpline</h3>
                 <p className="text-xs text-[#6B7280]">
-                  For urgent registration assistance and telephone inquiries.
+                  For conference registration and venue information.
                 </p>
               </div>
               <div>
@@ -63,7 +63,7 @@ export default function ContactPage() {
                 </div>
                 <h3 className="font-bold text-[#111320] text-lg">WhatsApp Support</h3>
                 <p className="text-xs text-[#6B7280]">
-                  Send inquiries, receipt reconciliation proofs, or directions questions.
+                  Send conference inquiries by WhatsApp.
                 </p>
               </div>
               <div>
@@ -97,20 +97,11 @@ export default function ContactPage() {
 
           </div>
 
-          {/* Interactive Map */}
+          {/* Map and directions placeholder */}
           <div className="space-y-3">
-            <h3 className="text-lg font-bold text-[#111320]">Location Map</h3>
-            <div className="w-full aspect-[16/8] rounded-[24px] overflow-hidden border border-gray-200 shadow-sm">
-              <iframe
-                src={SITE_CONFIG.venue.mapEmbedUrl}
-                width="100%"
-                height="100%"
-                style={{ border: 0 }}
-                allowFullScreen
-                loading="lazy"
-                referrerPolicy="strict-origin-when-cross-origin"
-                title="Horemow Holiness Campground Kwali Google Maps"
-              />
+            <h3 className="text-lg font-bold text-[#111320]">Map and travel directions</h3>
+            <div className="rounded-[20px] border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950">
+              A confirmed map pin and travel directions have not yet been provided by the organizers.
             </div>
           </div>
 

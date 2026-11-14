@@ -2,7 +2,9 @@ import Dexie, { type EntityTable } from "dexie";
 
 export interface CachedAttendee {
   tokenHash: string; // Primary key for fast O(1) hash lookup
+  ticketId: string;
   attendeeId: string;
+  orderId: string;
   refCode: string;
   name: string;
   parish: string | null;
@@ -39,6 +41,16 @@ class ScannerDatabase extends Dexie {
     super("HoremowScannerDB");
     this.version(1).stores({
       cachedAttendees: "&tokenHash, attendeeId, refCode, status",
+      pendingScans: "++id, attendeeId, idempotencyKey, synced",
+      scannerSettings: "&key",
+    });
+    this.version(2).stores({
+      cachedAttendees: "&tokenHash, attendeeId, orderId, refCode, status",
+      pendingScans: "++id, attendeeId, idempotencyKey, synced",
+      scannerSettings: "&key",
+    });
+    this.version(3).stores({
+      cachedAttendees: "&tokenHash, ticketId, attendeeId, orderId, refCode, status",
       pendingScans: "++id, attendeeId, idempotencyKey, synced",
       scannerSettings: "&key",
     });

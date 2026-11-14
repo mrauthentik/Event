@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { orders, attendees, groups, groupSeats, ticketTypes, ticketPrices, eventSettings, providerRoutes, payments } from "@/db/schema";
-import { eq, and, ne, isNull, sql } from "drizzle-orm";
+import { eq, and, or, gt, isNull, sql } from "drizzle-orm";
 import { CURRENCIES, SupportedCurrency } from "@/config/currencies";
 import { generateRefCode } from "@/lib/crypto/ref-code";
 import { createOrderAccessToken } from "@/lib/crypto/ed25519";
@@ -11,41 +11,69 @@ import { verifyTurnstileToken } from "@/lib/turnstile";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import crypto from "node:crypto";
 
+class CheckoutRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+const isPhoneE164 = (value: string) => /^\+[1-9]\d{6,14}$/.test(value.replace(/[\s()-]/g, ""));
+const normalizePhone = (value: string) => value.replace(/[\s()-]/g, "");
+
 const registrationSchema = z.object({
   currency: z.enum(["NGN", "USD", "EUR", "GBP"]),
   isGroup: z.boolean().default(false),
   // Payer / Leader info
-  payerName: z.string().min(2, "Full name is required"),
-  payerPhone: z.string().min(7, "Valid phone number is required"),
-  payerEmail: z.string().email("Valid email required").optional().or(z.literal("")),
-  country: z.string().default("Nigeria"),
-  state: z.string().optional(),
-  parish: z.string().optional(),
+  payerName: z.string().trim().min(2, "Full name is required").max(255),
+  payerPhone: z.string().trim().min(7, "Valid phone number is required").max(32),
+  payerEmail: z.string().trim().email("Valid email required").max(255).optional().or(z.literal("")),
+  country: z.string().trim().min(2).max(128).default("Nigeria"),
+  state: z.string().trim().max(128).optional(),
+  parish: z.string().trim().max(255).optional(),
   // Minor protection
   isMinor: z.boolean().default(false),
-  guardianName: z.string().optional(),
-  guardianPhone: z.string().optional(),
+  guardianName: z.string().trim().max(255).optional(),
+  guardianPhone: z.string().trim().max(32).optional(),
   // Group specific
-  groupName: z.string().optional(),
+  groupName: z.string().trim().max(255).optional(),
   groupSeatsCount: z.number().int().min(1).max(500).default(1),
   // Attendee direct list (if group leader fills upfront, or single individual)
   attendeeList: z
     .array(
       z.object({
-        name: z.string().min(2),
-        phone: z.string().min(7),
-        email: z.string().email().optional().or(z.literal("")),
-        state: z.string().optional(),
-        parish: z.string().optional(),
+        name: z.string().trim().min(2).max(255),
+        phone: z.string().trim().min(7).max(32),
+        email: z.string().trim().email().max(255).optional().or(z.literal("")),
+        state: z.string().trim().max(128).optional(),
+        parish: z.string().trim().max(255).optional(),
         isMinor: z.boolean().default(false),
-        guardianName: z.string().optional(),
-        guardianPhone: z.string().optional(),
+        guardianName: z.string().trim().max(255).optional(),
+        guardianPhone: z.string().trim().max(32).optional(),
       })
     )
     .max(500)
     .optional(),
   // Cloudflare Turnstile bot-protection token
-  turnstileToken: z.string().optional(),
+  turnstileToken: z.string().max(4096).optional(),
+  consent: z.literal(true, "Consent is required to register."),
+}).superRefine((data, context) => {
+  if (!isPhoneE164(data.payerPhone)) {
+    context.addIssue({ code: "custom", path: ["payerPhone"], message: "Use an international phone number, including the country code." });
+  }
+  if (data.isMinor && (!data.guardianName || !data.guardianPhone || !isPhoneE164(data.guardianPhone))) {
+    context.addIssue({ code: "custom", path: ["guardianName"], message: "A valid guardian name and international phone are required for a minor." });
+  }
+  if (data.guardianPhone && !isPhoneE164(data.guardianPhone)) {
+    context.addIssue({ code: "custom", path: ["guardianPhone"], message: "Use an international guardian phone number." });
+  }
+  for (const [index, attendee] of (data.attendeeList || []).entries()) {
+    if (!isPhoneE164(attendee.phone)) {
+      context.addIssue({ code: "custom", path: ["attendeeList", index, "phone"], message: "Use an international phone number." });
+    }
+    if (attendee.isMinor && (!attendee.guardianName || !attendee.guardianPhone || !isPhoneE164(attendee.guardianPhone))) {
+      context.addIssue({ code: "custom", path: ["attendeeList", index, "guardianName"], message: "A valid guardian name and phone are required for a minor." });
+    }
+  }
 });
 
 export async function POST(req: NextRequest) {
@@ -60,10 +88,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const body = await req.json();
+    const declaredLength = Number(req.headers.get("content-length") || 0);
+    if (declaredLength > 1024 * 1024) {
+      return NextResponse.json({ error: "Registration details are too large." }, { status: 413 });
+    }
+    const rawBody = await req.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 1024 * 1024) {
+      return NextResponse.json({ error: "Registration details are too large." }, { status: 413 });
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "Registration details must be valid JSON." }, { status: 400 });
+    }
     const validated = registrationSchema.parse(body);
+    const requestKey = z.string().uuid().parse(req.headers.get("idempotency-key"));
+    const payerPhone = normalizePhone(validated.payerPhone);
     const phoneLimit = await rateLimit(
-      `checkout_phone:${validated.payerPhone.replace(/\D/g, "")}`,
+      `checkout_phone:${payerPhone}`,
       5,
       10 * 60 * 1000
     );
@@ -95,40 +138,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Attendee count exceeds the number of paid seats." }, { status: 422 });
     }
 
-    // Capacity enforcement: count seats held by live orders (pending_payment + paid)
-    const [settings] = await db.select().from(eventSettings).limit(1);
-    if (settings && Date.now() > settings.registrationDeadline.getTime()) {
-      return NextResponse.json({ error: "Registration is closed." }, { status: 403 });
-    }
-    if (settings?.capacityLimit) {
-      const liveOrders = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(attendees)
-        .innerJoin(orders, eq(attendees.orderId, orders.id))
-        .where(
-          and(
-            ne(orders.status, "expired"),
-            ne(orders.status, "failed"),
-            ne(orders.status, "refunded"),
-            isNull(attendees.deletedAt)
-          )
-        );
-      const held = liveOrders[0]?.count ?? 0;
-      if (held + seatsCount > settings.capacityLimit) {
-        const remaining = Math.max(0, settings.capacityLimit - held);
-        return NextResponse.json(
-          {
-            error: `Registration capacity reached. Only ${remaining} seat(s) remain.`,
-            capacityRemaining: remaining,
-          },
-          { status: 409 }
-        );
-      }
-    }
-
     // Generate unique order reference (HGC-XXXXXX)
     const orderRef = generateRefCode();
-    const idempotencyKey = `order_${orderRef}_${Date.now()}`;
+    const idempotencyKey = `checkout_${requestKey}`;
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15-minute reservation timer
 
     // Find or seed standard ticket type
@@ -171,8 +183,64 @@ export async function POST(req: NextRequest) {
 
     // Wrap creation in database transaction
     const result = await db.transaction(async (tx) => {
+      const now = new Date();
+      const [settings] = await tx.select().from(eventSettings).limit(1);
+      if (!settings) throw new CheckoutRequestError("Registration is temporarily unavailable.", 503);
+
+      const [existingOrder] = await tx.select().from(orders)
+        .where(eq(orders.idempotencyKey, idempotencyKey)).limit(1);
+      if (existingOrder) {
+        if (existingOrder.status !== "pending_payment") {
+          throw new CheckoutRequestError("This registration attempt has already been completed or expired. Start a new registration.", 409);
+        }
+        const existingAttendees = await tx.select().from(attendees).where(eq(attendees.orderId, existingOrder.id));
+        if (
+          existingOrder.currency !== validated.currency ||
+          existingOrder.totalMinor !== totalMinor ||
+          existingOrder.payerName !== validated.payerName ||
+          existingOrder.payerPhoneE164 !== payerPhone ||
+          existingOrder.payerEmail !== (validated.payerEmail || null) ||
+          existingOrder.isGroup !== validated.isGroup ||
+          existingAttendees.length !== seatsCount
+        ) {
+          throw new CheckoutRequestError("This idempotency key is already tied to different registration details.", 409);
+        }
+        return { order: existingOrder, insertedAttendees: existingAttendees, isRetry: true };
+      }
+      if (now > settings.registrationDeadline) {
+        throw new CheckoutRequestError("Registration is closed.", 403);
+      }
+      let capacityLimit = settings.capacityLimit;
+      if (capacityLimit !== null) {
+        const [lockedSettings] = await tx.select().from(eventSettings)
+          .where(eq(eventSettings.id, settings.id)).for("update").limit(1);
+        if (!lockedSettings) throw new CheckoutRequestError("Registration is temporarily unavailable.", 503);
+        if (now > lockedSettings.registrationDeadline) {
+          throw new CheckoutRequestError("Registration is closed.", 403);
+        }
+        capacityLimit = lockedSettings.capacityLimit;
+      }
+      if (capacityLimit !== null) {
+        const [liveOrders] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(attendees)
+          .innerJoin(orders, eq(attendees.orderId, orders.id))
+          .where(and(
+            or(
+              eq(orders.status, "paid"),
+              and(eq(orders.status, "pending_payment"), gt(orders.expiresAt, now)),
+            ),
+            isNull(attendees.deletedAt),
+          ));
+        const held = liveOrders?.count ?? 0;
+        if (held + seatsCount > capacityLimit) {
+          const remaining = Math.max(0, capacityLimit - held);
+          throw new CheckoutRequestError(`Registration capacity reached. Only ${remaining} seat(s) remain.`, 409);
+        }
+      }
+
       // 1. Create Order
-      const [order] = await tx
+      const [createdOrder] = await tx
         .insert(orders)
         .values({
           reference: orderRef,
@@ -181,14 +249,36 @@ export async function POST(req: NextRequest) {
           totalMinor,
           feeMinor: 0,
           payerName: validated.payerName,
-          payerPhoneE164: validated.payerPhone,
+          payerPhoneE164: payerPhone,
           payerEmail: validated.payerEmail || null,
           isGroup: validated.isGroup,
           groupName: validated.isGroup ? validated.groupName || validated.payerName : null,
           idempotencyKey,
           expiresAt,
         })
+        .onConflictDoNothing({ target: orders.idempotencyKey })
         .returning();
+      if (!createdOrder) {
+        const [retryOrder] = await tx.select().from(orders)
+          .where(eq(orders.idempotencyKey, idempotencyKey)).limit(1);
+        if (!retryOrder || retryOrder.status !== "pending_payment") {
+          throw new CheckoutRequestError("This registration attempt could not be resumed.", 409);
+        }
+        const retryAttendees = await tx.select().from(attendees).where(eq(attendees.orderId, retryOrder.id));
+        if (
+          retryOrder.currency !== validated.currency ||
+          retryOrder.totalMinor !== totalMinor ||
+          retryOrder.payerName !== validated.payerName ||
+          retryOrder.payerPhoneE164 !== payerPhone ||
+          retryOrder.payerEmail !== (validated.payerEmail || null) ||
+          retryOrder.isGroup !== validated.isGroup ||
+          retryAttendees.length !== seatsCount
+        ) {
+          throw new CheckoutRequestError("This idempotency key is already tied to different registration details.", 409);
+        }
+        return { order: retryOrder, insertedAttendees: retryAttendees, isRetry: true };
+      }
+      const order = createdOrder;
 
       let createdGroupId: string | null = null;
 
@@ -201,7 +291,7 @@ export async function POST(req: NextRequest) {
             orderId: order.id,
             churchOrParishName: validated.groupName || validated.payerName,
             leaderName: validated.payerName,
-            leaderPhoneE164: validated.payerPhone,
+            leaderPhoneE164: payerPhone,
             leaderEmail: validated.payerEmail || null,
             totalSeats: seatsCount,
             claimedSeats: validated.attendeeList?.length || 1,
@@ -218,7 +308,7 @@ export async function POST(req: NextRequest) {
         : [
             {
               name: validated.payerName,
-              phone: validated.payerPhone,
+              phone: payerPhone,
               email: validated.payerEmail,
               state: validated.state,
               parish: validated.parish,
@@ -231,7 +321,7 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < seatsCount; i++) {
         const attendeeInfo = directAttendees[i] || {
           name: `Unclaimed Seat ${i + 1}`,
-          phone: validated.payerPhone,
+          phone: payerPhone,
           email: null,
           state: validated.state,
           parish: validated.parish,
@@ -250,14 +340,14 @@ export async function POST(req: NextRequest) {
           ticketTypeId: defaultTicketType.id,
           refCode: attendeeRef,
           name: attendeeInfo.name,
-          phoneE164: attendeeInfo.phone,
+          phoneE164: normalizePhone(attendeeInfo.phone),
           email: attendeeInfo.email || null,
           country: validated.country,
           state: attendeeInfo.state || validated.state || null,
           parish: attendeeInfo.parish || validated.parish || null,
           isMinor: attendeeInfo.isMinor || false,
           guardianName: attendeeInfo.guardianName || null,
-          guardianPhoneE164: attendeeInfo.guardianPhone || null,
+          guardianPhoneE164: attendeeInfo.guardianPhone ? normalizePhone(attendeeInfo.guardianPhone) : null,
           status: "unconfirmed" as const,
           qrTokenHash: tempHash,
         });
@@ -277,8 +367,23 @@ export async function POST(req: NextRequest) {
         await tx.insert(groupSeats).values(seatsRows);
       }
 
-      return { order, insertedAttendees };
+      return { order, insertedAttendees, isRetry: false };
     });
+
+    if (result.isRetry) {
+      const [previousPayment] = await db.select().from(payments)
+        .where(and(eq(payments.orderId, result.order.id), eq(payments.status, "initiated")))
+        .orderBy(sql`${payments.createdAt} desc`).limit(1);
+      if (previousPayment?.checkoutUrl) {
+        return NextResponse.json({
+          success: true,
+          reference: result.order.reference,
+          totalMinor: result.order.totalMinor,
+          currency: result.order.currency,
+          checkoutUrl: previousPayment.checkoutUrl,
+        });
+      }
+    }
 
     // 4. Initialize Payment Provider
     const ticketAccessToken = await createOrderAccessToken(result.order.id);
@@ -291,10 +396,23 @@ export async function POST(req: NextRequest) {
       amountMinor: totalMinor,
       currency: validated.currency as SupportedCurrency,
       payerName: validated.payerName,
-      payerPhoneE164: validated.payerPhone,
+      payerPhoneE164: payerPhone,
       payerEmail: validated.payerEmail,
       callbackUrl: callbackUrl.toString(),
     });
+
+    if (!session.checkoutUrl) throw new Error("Payment provider did not return a checkout URL.");
+    const checkoutUrl = new URL(session.checkoutUrl, callbackUrl);
+    const allowedCheckoutHosts = selectedProvider === "paystack"
+      ? new Set(["checkout.paystack.com"])
+      : new Set(["www.paypal.com", "www.sandbox.paypal.com"]);
+    const localMockCheckout = process.env.MOCK_PAYMENTS === "true" &&
+      process.env.NODE_ENV !== "production" &&
+      checkoutUrl.origin === callbackUrl.origin &&
+      checkoutUrl.pathname === "/payment/status";
+    if (!localMockCheckout && (checkoutUrl.protocol !== "https:" || !allowedCheckoutHosts.has(checkoutUrl.hostname))) {
+      throw new Error("Payment provider returned an invalid checkout URL.");
+    }
 
     await db.insert(payments).values({
       orderId: result.order.id,
@@ -303,6 +421,7 @@ export async function POST(req: NextRequest) {
       status: "initiated",
       currency: validated.currency,
       amountMinor: totalMinor,
+      checkoutUrl: checkoutUrl.toString(),
     });
 
     return NextResponse.json({
@@ -310,21 +429,20 @@ export async function POST(req: NextRequest) {
       reference: orderRef,
       totalMinor,
       currency: validated.currency,
-      checkoutUrl: session.checkoutUrl,
-      providerRef: session.providerRef,
+      checkoutUrl: checkoutUrl.toString(),
     });
   } catch (error: any) {
-    console.error("Checkout initialize error:", error);
+    if (error instanceof CheckoutRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: "Validation failed", details: error.flatten().fieldErrors },
         { status: 422 }
       );
     }
-    return NextResponse.json(
-      { error: error?.message || "Failed to initialize checkout session." },
-      { status: 500 }
-    );
+    console.error("Checkout initialization failed.");
+    return NextResponse.json({ error: "Unable to start checkout right now. Please try again shortly." }, { status: 503 });
   }
 }
 

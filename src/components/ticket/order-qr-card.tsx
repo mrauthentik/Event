@@ -6,16 +6,15 @@ import { Users } from "lucide-react";
 
 interface OrderQrCardProps {
   orderReference: string;
-  isGroup: boolean;
+  token: string;
 }
 
-/** Order-level QR encoding `IHGC-ORDER:{ref}` for express group check-in. */
-export function OrderQrCard({ orderReference, isGroup }: OrderQrCardProps) {
+/** A signed order capability for offline group check-in. */
+export function OrderQrCard({ orderReference, token }: OrderQrCardProps) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
-  const payload = `IHGC-ORDER:${orderReference}`;
 
   useEffect(() => {
-    QRCode.toDataURL(payload, {
+    QRCode.toDataURL(token, {
       width: 200,
       margin: 1,
       color: { dark: "#0E1020", light: "#FFFFFF" },
@@ -23,7 +22,7 @@ export function OrderQrCard({ orderReference, isGroup }: OrderQrCardProps) {
     })
       .then(setDataUrl)
       .catch(() => {});
-  }, [payload]);
+  }, [token]);
 
   return (
     <div className="bg-white rounded-[20px] border border-gray-200 p-5 flex items-center gap-5">
@@ -37,12 +36,10 @@ export function OrderQrCard({ orderReference, isGroup }: OrderQrCardProps) {
       <div className="space-y-1">
         <div className="flex items-center gap-1.5 text-sm font-bold text-[#111320]">
           <Users className="w-4 h-4 text-[#0E7A6E]" />
-          {isGroup ? "Group Order QR" : "Order QR"}
+          Group Order QR
         </div>
         <div className="text-xs text-gray-500 leading-relaxed">
-          {isGroup
-            ? "Scan this at the group check-in desk to process all seats on this order at once."
-            : "Scan this at the gate for express lookup of your order."}
+          "Scan at the group check-in desk to review all paid seats and check them in together."
         </div>
         <div className="text-[11px] font-mono text-gray-400">{orderReference}</div>
       </div>

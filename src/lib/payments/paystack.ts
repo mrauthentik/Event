@@ -19,7 +19,7 @@ export class PaystackProvider implements PaymentProvider {
       reference: params.orderReference,
       amount: params.amountMinor, // Already in minor units (kobo)
       currency: params.currency,
-      email: params.payerEmail || `${params.orderReference.toLowerCase()}@horemow-attendee.org`,
+      email: params.payerEmail || `${params.orderReference.toLowerCase()}@attendee.invalid`,
       callback_url: params.callbackUrl,
       metadata: {
         orderId: params.orderId,
@@ -35,9 +35,11 @@ export class PaystackProvider implements PaymentProvider {
 
     // If mock/sandbox key without live network
     if (process.env.MOCK_PAYMENTS === "true" && process.env.NODE_ENV !== "production") {
+      const checkoutUrl = new URL(params.callbackUrl);
+      checkoutUrl.searchParams.set("ref", params.orderReference);
       return {
         provider: "paystack",
-        checkoutUrl: `/payment/status?ref=${params.orderReference}`,
+        checkoutUrl: checkoutUrl.toString(),
         providerRef: params.orderReference,
         rawPayload: { mock: true },
       };
@@ -54,11 +56,12 @@ export class PaystackProvider implements PaymentProvider {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
     });
 
     const data = await response.json();
     if (!data.status || !data.data) {
-      throw new Error(`Paystack initialization failed: ${data.message || "Unknown error"}`);
+      throw new Error("Paystack checkout initialization failed.");
     }
 
     return {
@@ -86,6 +89,7 @@ export class PaystackProvider implements PaymentProvider {
       headers: {
         Authorization: `Bearer ${this.secretKey}`,
       },
+      signal: AbortSignal.timeout(10_000),
     });
 
     const data = await response.json();
