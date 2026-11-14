@@ -14,7 +14,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "auth:provision-totp": "node scripts/provision-totp.mjs",
-    "images:optimize": "node scripts/optimize-images.mjs"
+    "images:optimize": "node scripts/optimize-images.mjs",
+    "benchmark:load": "pnpm dlx tsx scripts/simulate-load.ts"
   },
   "keywords": [],
   "author": "",
