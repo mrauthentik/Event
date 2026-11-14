@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { attendees, auditLog } from "@/db/schema";
+import { attendees, auditLog, bookletStock, orders } from "@/db/schema";
 import { requireRole } from "@/lib/auth/session";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { isSameOriginRequest } from "@/lib/security/origin";
+import { calendarDateInZone } from "@/lib/timezone";
 
 const overrideSchema = z.object({
   attendeeId: z.string().uuid(),
@@ -46,42 +47,56 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid supervisor PIN." }, { status: 403 });
     }
 
-    const attendee = await db.query.attendees.findFirst({ where: eq(attendees.id, input.attendeeId) });
-    if (!attendee || attendee.deletedAt) {
-      return NextResponse.json({ error: "Attendee not found." }, { status: 404 });
-    }
-
     const now = new Date();
-    let nextStatus = attendee.status;
-    let checkedInAt = attendee.checkedInAt;
-    let bookletIssuedAt = attendee.bookletIssuedAt;
+    const outcome = await db.transaction(async (tx) => {
+      const [row] = await tx.select({ attendee: attendees, orderStatus: orders.status })
+        .from(attendees)
+        .innerJoin(orders, eq(attendees.orderId, orders.id))
+        .where(eq(attendees.id, input.attendeeId))
+        .for("update")
+        .limit(1);
+      const attendee = row?.attendee;
+      if (!attendee || attendee.deletedAt) throw new Error("Attendee not found.");
+      if (row.orderStatus !== "paid") throw new Error("Only paid attendees can receive a check-in override.");
 
-    if (input.action === "force_check_in") {
-      if (attendee.status === "unconfirmed") {
-        return NextResponse.json({ error: "Only confirmed attendees can be checked in." }, { status: 409 });
+      let nextStatus = attendee.status;
+      let checkedInAt = attendee.checkedInAt;
+      let bookletIssuedAt = attendee.bookletIssuedAt;
+      let stockRow: typeof bookletStock.$inferSelect | undefined;
+
+      if (input.action === "force_check_in") {
+        if (attendee.status === "unconfirmed") throw new Error("Only confirmed attendees can be checked in.");
+        if (attendee.checkedInAt) throw new Error("Attendee is already checked in.");
+        nextStatus = "checked_in";
+        checkedInAt = now;
+      } else if (input.action === "issue_booklet") {
+        if (!attendee.checkedInAt) throw new Error("Check in the attendee before issuing a booklet.");
+        if (attendee.bookletIssuedAt) throw new Error("A booklet has already been issued.");
+        const allocatedDate = calendarDateInZone(now, "Africa/Lagos");
+        [stockRow] = await tx.select().from(bookletStock)
+          .where(and(eq(bookletStock.standId, input.standId), eq(bookletStock.allocatedDate, allocatedDate)))
+          .for("update").limit(1);
+        if (!stockRow) throw new Error("No booklet allocation is configured for this stand today.");
+        if (stockRow.allocatedQuantity - stockRow.issuedCount - stockRow.returnedCount <= 0) throw new Error("This stand has no booklets remaining today.");
+        nextStatus = "booklet_issued";
+        bookletIssuedAt = now;
+      } else {
+        if (!attendee.checkedInAt) throw new Error("Attendee is not checked in.");
+        if (attendee.bookletIssuedAt) throw new Error("This attendee already received a physical booklet. Record the booklet return first; the check-in cannot be undone while the issued asset is still outstanding.");
+        nextStatus = "confirmed";
+        checkedInAt = null;
       }
-      if (attendee.checkedInAt) return NextResponse.json({ error: "Attendee is already checked in." }, { status: 409 });
-      nextStatus = "checked_in";
-      checkedInAt = now;
-    } else if (input.action === "issue_booklet") {
-      if (!attendee.checkedInAt) return NextResponse.json({ error: "Check in the attendee before issuing a booklet." }, { status: 409 });
-      if (attendee.bookletIssuedAt) return NextResponse.json({ error: "A booklet has already been issued." }, { status: 409 });
-      nextStatus = "booklet_issued";
-      bookletIssuedAt = now;
-    } else {
-      if (!attendee.checkedInAt) return NextResponse.json({ error: "Attendee is not checked in." }, { status: 409 });
-      nextStatus = "confirmed";
-      checkedInAt = null;
-      bookletIssuedAt = null;
-    }
 
-    await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(attendees)
+      const [updated] = await tx.update(attendees)
         .set({ status: nextStatus, checkedInAt, bookletIssuedAt, updatedAt: now })
-        .where(and(eq(attendees.id, attendee.id), eq(attendees.status, attendee.status)))
+        .where(and(eq(attendees.id, attendee.id), eq(attendees.status, attendee.status), isNull(attendees.deletedAt)))
         .returning({ id: attendees.id });
       if (!updated) throw new Error("Attendee state changed; retry the override.");
+
+      if (stockRow) {
+        await tx.update(bookletStock).set({ issuedCount: stockRow.issuedCount + 1, updatedAt: now })
+          .where(eq(bookletStock.id, stockRow.id));
+      }
 
       await tx.insert(auditLog).values({
         staffId: user.id,
@@ -93,14 +108,17 @@ export async function POST(req: NextRequest) {
         ipAddress: ip === "unknown" ? null : ip,
         userAgent: req.headers.get("user-agent"),
       });
+      return { status: nextStatus };
     });
 
-    return NextResponse.json({ success: true, status: nextStatus });
+    return NextResponse.json({ success: true, status: outcome.status });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Invalid override request." }, { status: 422 });
     }
-    console.error("Scanner override failed:", error);
-    return NextResponse.json({ error: "Override operation failed." }, { status: 409 });
+    const message = error instanceof Error ? error.message : "Override operation failed.";
+    if (message === "Attendee not found.") return NextResponse.json({ error: message }, { status: 404 });
+    if (message === "Override operation failed.") console.error("Scanner override failed.");
+    return NextResponse.json({ error: message }, { status: 409 });
   }
 }

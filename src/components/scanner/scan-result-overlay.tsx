@@ -1,199 +1,188 @@
 "use client";
 
-import { CheckCircle2, XCircle, AlertTriangle, BookOpen } from "lucide-react";
-import { CachedAttendee } from "@/lib/offline/dexie-db";
+import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  CircleHelp,
+  LoaderCircle,
+  ShieldAlert,
+  X,
+} from "lucide-react";
+import type { CachedAttendee } from "@/lib/offline/dexie-db";
 
 export type ScanResult =
   | { type: "idle" }
-  | { type: "valid"; attendee: CachedAttendee; message: string }
+  | { type: "valid"; attendee: CachedAttendee; ticketToken: string; message: string }
   | { type: "group"; orderId: string; orderToken: string; attendees: CachedAttendee[]; checkedIn: boolean; message?: string; error?: string }
   | { type: "already_checked_in"; attendee: CachedAttendee; message: string }
-  | { type: "forged"; error: string };
+  | { type: "unknown"; message: string }
+  | { type: "forged"; error: string }
+  | { type: "error"; message: string };
 
 interface ScanResultOverlayProps {
   result: ScanResult;
   standId: string;
+  busy?: boolean;
+  issuingBooklet?: boolean;
   onDismiss: () => void;
-  onIssueBooklet: (attendee: CachedAttendee) => void;
+  onIssueBooklet: (attendee: CachedAttendee, ticketToken: string) => void;
   onCheckInGroup: (attendees: CachedAttendee[], orderToken: string) => void;
+}
+
+function StatusIcon({ type }: { type: ScanResult["type"] }) {
+  if (type === "valid" || type === "group") return <CheckCircle2 className="h-6 w-6" aria-hidden="true" />;
+  if (type === "forged") return <ShieldAlert className="h-6 w-6" aria-hidden="true" />;
+  if (type === "already_checked_in") return <AlertTriangle className="h-6 w-6" aria-hidden="true" />;
+  if (type === "unknown") return <CircleHelp className="h-6 w-6" aria-hidden="true" />;
+  return <AlertTriangle className="h-6 w-6" aria-hidden="true" />;
+}
+
+function resultStyle(type: ScanResult["type"]) {
+  if (type === "valid" || type === "group") return {
+    tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    pill: "bg-emerald-100 text-emerald-800",
+    title: type === "group" ? "Group ticket found" : "Entry confirmed",
+  };
+  if (type === "forged") return {
+    tone: "border-red-200 bg-red-50 text-red-800",
+    pill: "bg-red-100 text-red-800",
+    title: "Ticket rejected",
+  };
+  if (type === "already_checked_in") return {
+    tone: "border-amber-200 bg-amber-50 text-amber-900",
+    pill: "bg-amber-100 text-amber-900",
+    title: "Already checked in",
+  };
+  return {
+    tone: "border-sky-200 bg-sky-50 text-sky-900",
+    pill: "bg-sky-100 text-sky-900",
+    title: type === "unknown" ? "Ticket not in this roster" : "Scan needs attention",
+  };
 }
 
 export function ScanResultOverlay({
   result,
   standId,
+  busy = false,
+  issuingBooklet = false,
   onDismiss,
   onIssueBooklet,
   onCheckInGroup,
 }: ScanResultOverlayProps) {
   if (result.type === "idle") return null;
 
-  if (result.type === "group") {
-    const eligibleCount = result.attendees.filter((attendee) => attendee.status === "confirmed").length;
-    return (
-      <div className="fixed inset-0 z-50 flex flex-col justify-between bg-[#064E3B] p-5 text-white animate-in zoom-in-95 duration-150 sm:p-6">
-        <div className="pt-4 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border-4 border-emerald-400 bg-emerald-400/20 text-emerald-300">
-            <CheckCircle2 className="h-9 w-9" />
-          </div>
-          <h2 className="pt-3 text-2xl font-black tracking-tight">Group Order Check-in</h2>
-          <p className="mt-1 text-sm text-emerald-100">
-            {result.message || (result.checkedIn ? "Group check-in recorded" : "Review every seat before checking in this order.")}
-          </p>
-          <div className="mt-1 font-mono text-xs text-emerald-200">{result.attendees.length} paid seats</div>
-        </div>
+  const style = resultStyle(result.type);
+  const eligibleGroupCount = result.type === "group"
+    ? result.attendees.filter((attendee) => attendee.status === "confirmed").length
+    : 0;
+  const description = result.type === "forged" ? result.error
+    : result.type === "unknown" || result.type === "error" ? result.message
+      : result.type === "group" ? result.error || result.message
+        : result.type === "already_checked_in" ? result.message
+          : result.type === "valid" ? result.message : null;
 
-        <div className="my-4 max-h-[48vh] overflow-y-auto rounded-2xl border border-white/15 bg-black/15 text-left">
-          {result.attendees.map((attendee) => {
-            const alreadyCheckedIn = attendee.status === "checked_in" || attendee.status === "booklet_issued";
-            return (
-              <div key={attendee.attendeeId} className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 last:border-b-0">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-bold">{attendee.name}</div>
-                  <div className="mt-0.5 font-mono text-[10px] text-emerald-100">{attendee.refCode}</div>
-                </div>
-                <div className={`shrink-0 text-[10px] font-bold ${alreadyCheckedIn ? "text-amber-200" : "text-emerald-200"}`}>
-                  {alreadyCheckedIn ? "ALREADY IN" : attendee.status === "confirmed" ? "READY" : "REVIEW"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mx-auto w-full max-w-sm space-y-3 pb-2">
-          {result.error && <p className="rounded-lg bg-red-900/40 p-3 text-center text-xs text-red-100">{result.error}</p>}
-          {!result.checkedIn && eligibleCount > 0 && (
-            <button onClick={() => onCheckInGroup(result.attendees, result.orderToken)} className="w-full rounded-full bg-emerald-300 py-4 text-sm font-black tracking-wide text-[#064E3B] shadow-xl active:scale-[0.98]">
-              Check In {eligibleCount} Ready {eligibleCount === 1 ? "Attendee" : "Attendees"}
-            </button>
-          )}
-          <button onClick={onDismiss} className="w-full rounded-full bg-white/20 py-3.5 text-sm font-bold hover:bg-white/30">
-            {result.checkedIn || eligibleCount === 0 ? "Next Scan" : "Cancel"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (result.type === "valid") {
-    return (
-      <div className="fixed inset-0 z-50 bg-[#064E3B] text-white p-6 flex flex-col justify-between animate-in zoom-in-95 duration-150">
-        <div className="pt-8 text-center space-y-4">
-          <div className="w-24 h-24 rounded-full bg-emerald-400/20 text-emerald-300 mx-auto flex items-center justify-center border-4 border-emerald-400">
-            <CheckCircle2 className="w-14 h-14" />
-          </div>
-
-          <div className="space-y-1">
-            <span className="px-3 py-1 rounded-full bg-white/20 text-xs font-bold uppercase tracking-widest text-emerald-200">
-              {result.message}
-            </span>
-            <h2 className="text-3xl font-black tracking-tight pt-2">
-              {result.attendee.name}
-            </h2>
-            {result.attendee.parish && (
-              <div className="text-sm text-emerald-200">{result.attendee.parish}</div>
-            )}
-          </div>
-
-          <div className="p-4 rounded-xl bg-black/20 text-left space-y-1 max-w-sm mx-auto text-xs font-mono">
-            <div>Ref: <strong className="text-white">{result.attendee.refCode}</strong></div>
-            <div>Gate: <strong className="text-white">{standId}</strong></div>
-            <div>Booklet Status: <strong className={result.attendee.bookletIssuedAt ? "text-emerald-300" : "text-amber-300"}>
-              {result.attendee.bookletIssuedAt ? "Issued" : "Not Yet Issued"}
-            </strong></div>
-          </div>
-        </div>
-
-        <div className="pb-8 space-y-3 max-w-sm mx-auto w-full">
-          {!result.attendee.bookletIssuedAt && (
-            <button
-              onClick={() => onIssueBooklet(result.attendee)}
-              className="w-full py-4 rounded-full bg-emerald-300 hover:bg-emerald-200 text-[#064E3B] font-black text-sm tracking-wide flex items-center justify-center gap-2 shadow-xl active:scale-98"
-            >
-              <BookOpen className="w-5 h-5" />
-              <span>Issue Conference Booklet</span>
-            </button>
-          )}
-
-          <button
-            onClick={onDismiss}
-            className="w-full py-3.5 rounded-full bg-white/20 hover:bg-white/30 text-white font-bold text-sm"
-          >
-            Next Scan (Dismiss)
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (result.type === "already_checked_in") {
-    return (
-      <div className="fixed inset-0 z-50 bg-[#78350F] text-white p-6 flex flex-col justify-between animate-in zoom-in-95 duration-150">
-        <div className="pt-8 text-center space-y-4">
-          <div className="w-24 h-24 rounded-full bg-amber-400/20 text-amber-300 mx-auto flex items-center justify-center border-4 border-amber-400">
-            <AlertTriangle className="w-14 h-14" />
-          </div>
-
-          <div className="space-y-1">
-            <span className="px-3 py-1 rounded-full bg-white/20 text-xs font-bold uppercase tracking-widest text-amber-200">
-              Already Checked In
-            </span>
-            <h2 className="text-3xl font-black tracking-tight pt-2">
-              {result.attendee.name}
-            </h2>
-            <p className="text-sm text-amber-200 leading-relaxed max-w-xs mx-auto">
-              {result.message}
-            </p>
-          </div>
-
-          <div className="p-4 rounded-xl bg-black/20 text-left space-y-1 max-w-sm mx-auto text-xs font-mono">
-            <div>Ref: <strong className="text-white">{result.attendee.refCode}</strong></div>
-            <div>Checked In At: <strong className="text-white">
-              {result.attendee.checkedInAt ? new Date(result.attendee.checkedInAt).toLocaleString() : "Earlier"}
-            </strong></div>
-          </div>
-        </div>
-
-        <div className="pb-8 space-y-3 max-w-sm mx-auto w-full">
-          <button
-            onClick={onDismiss}
-            className="w-full py-4 rounded-full bg-white text-black font-black text-sm tracking-wide"
-          >
-            Dismiss
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // forged
   return (
-    <div className="fixed inset-0 z-50 bg-[#7F1D1D] text-white p-6 flex flex-col justify-between animate-in zoom-in-95 duration-150">
-      <div className="pt-8 text-center space-y-4">
-        <div className="w-24 h-24 rounded-full bg-red-400/20 text-red-300 mx-auto flex items-center justify-center border-4 border-red-400">
-          <XCircle className="w-14 h-14" />
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#08111b]/45 p-2 backdrop-blur-[2px] sm:items-center sm:p-5" onClick={onDismiss}>
+      <section
+        aria-labelledby="scan-result-title"
+        aria-modal="true"
+        className="max-h-[88svh] w-full max-w-md overflow-hidden rounded-[28px] border border-white/70 bg-white text-[#172431] shadow-[0_28px_90px_rgba(8,17,27,0.32)] animate-in slide-in-from-bottom-4 duration-300 sm:max-h-[82svh]"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="flex items-center justify-center pt-3 sm:hidden" aria-hidden="true">
+          <span className="h-1 w-10 rounded-full bg-gray-300" />
         </div>
+        <header className="flex items-center justify-between px-5 pb-3 pt-4 sm:px-6 sm:pt-5">
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.17em] text-gray-400">Ticket scan</span>
+          <button onClick={onDismiss} className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E7A6E]" aria-label="Close scan details">
+            <X className="h-4 w-4" />
+          </button>
+        </header>
 
-        <div className="space-y-1">
-          <span className="px-3 py-1 rounded-full bg-white/20 text-xs font-bold uppercase tracking-widest text-red-200">
-            Invalid / Forged Ticket
-          </span>
-          <h2 className="text-2xl font-black tracking-tight pt-2">
-            Ticket Rejected
-          </h2>
-          <p className="text-sm text-red-200 leading-relaxed max-w-xs mx-auto">
-            {result.error}
-          </p>
+        <div className="overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">
+          <div className={`flex items-center gap-3 rounded-2xl border p-3.5 ${style.tone}`}>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-sm">
+              {busy ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" /> : <StatusIcon type={result.type} />}
+            </div>
+            <div className="min-w-0">
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-[0.12em] ${style.pill}`}>
+                {busy ? "Working" : result.type === "valid" ? "Ready at gate" : result.type === "already_checked_in" ? "Review entry" : result.type === "forged" ? "Invalid signature" : result.type === "unknown" ? "Roster lookup" : result.type === "group" ? "Group pass" : "Action needed"}
+              </span>
+              <h2 id="scan-result-title" className="mt-1 truncate text-[16px] font-extrabold leading-tight text-[#172431]">{style.title}</h2>
+            </div>
+          </div>
+
+          {description && <p className="mt-3 rounded-xl bg-gray-50 px-3.5 py-3 text-[12px] leading-relaxed text-gray-600" role={result.type === "error" || result.type === "forged" ? "alert" : "status"}>{description}</p>}
+
+          {result.type === "valid" && (
+            <div className="mt-4 flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eaf9f7] text-sm font-black text-[#0E7A6E]">{result.attendee.name.trim().charAt(0).toUpperCase()}</div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[14px] font-extrabold text-[#172431]">{result.attendee.name}</div>
+                <div className="mt-0.5 truncate font-mono text-[10px] text-gray-500">{result.attendee.refCode} <span className="font-sans">· {standId}</span></div>
+              </div>
+              <span className="rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-bold uppercase text-emerald-700">Checked in</span>
+            </div>
+          )}
+
+          {result.type === "already_checked_in" && (
+            <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+              <div className="text-[14px] font-extrabold text-[#172431]">{result.attendee.name}</div>
+              <div className="mt-1 font-mono text-[10px] text-gray-600">{result.attendee.refCode}</div>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-[10px]">
+                <div><span className="block text-gray-500">Checked in</span><strong className="mt-1 block text-gray-800">{result.attendee.checkedInAt ? new Date(result.attendee.checkedInAt).toLocaleTimeString("en-NG", { timeZone: "Africa/Lagos", hour: "numeric", minute: "2-digit" }) : "Earlier"}</strong></div>
+                <div><span className="block text-gray-500">Stand</span><strong className="mt-1 block truncate text-gray-800">{result.attendee.checkedInStand || "Not recorded"}</strong></div>
+              </div>
+            </div>
+          )}
+
+          {result.type === "group" && (
+            <div className="mt-4 overflow-hidden rounded-2xl border border-gray-100 bg-white">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 text-[10px]">
+                <span className="font-bold uppercase tracking-wider text-gray-500">Paid seats</span>
+                <span className="font-extrabold text-gray-800">{result.attendees.length} attendees</span>
+              </div>
+              <ul className="max-h-[34svh] divide-y divide-gray-100 overflow-y-auto">
+                {result.attendees.map((attendee) => {
+                  const checkedIn = attendee.checkedInAt || attendee.status === "checked_in" || attendee.status === "booklet_issued";
+                  return (
+                    <li key={attendee.attendeeId} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-[12px] font-bold text-gray-800">{attendee.name}</div>
+                        <div className="mt-0.5 font-mono text-[9px] text-gray-500">{attendee.refCode}</div>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-extrabold uppercase ${checkedIn ? "bg-amber-50 text-amber-800" : attendee.status === "confirmed" ? "bg-emerald-50 text-emerald-800" : "bg-gray-100 text-gray-600"}`}>
+                        {checkedIn ? "Already in" : attendee.status === "confirmed" ? "Ready" : "Review"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {result.type === "valid" && !result.attendee.bookletIssuedAt && (
+              <button onClick={() => onIssueBooklet(result.attendee, result.ticketToken)} disabled={busy || issuingBooklet} className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#0e7a6e]/20 bg-[#eaf9f7] text-[12px] font-extrabold text-[#0e6f64] hover:bg-[#dcf5f1] disabled:cursor-wait disabled:opacity-60">
+              {issuingBooklet ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+              {issuingBooklet ? "Recording issue…" : "Issue conference booklet"}
+            </button>
+          )}
+
+          <div className="mt-4 grid grid-cols-2 gap-2.5">
+            {result.type === "group" && !result.checkedIn && eligibleGroupCount > 0 && (
+              <button onClick={() => onCheckInGroup(result.attendees, result.orderToken)} disabled={busy} className="col-span-2 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#0e7a6e] px-4 text-[12px] font-extrabold text-white shadow-sm hover:bg-[#0a655c] disabled:cursor-wait disabled:opacity-60">
+                {busy && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                Check in {eligibleGroupCount} {eligibleGroupCount === 1 ? "attendee" : "attendees"}
+              </button>
+            )}
+            <button onClick={onDismiss} className="col-span-2 min-h-11 rounded-xl bg-[#0b2f50] px-4 text-[12px] font-extrabold text-white hover:bg-[#12476d]">
+              {result.type === "valid" || result.type === "group" && result.checkedIn ? "Next scan" : "Close and scan again"}
+            </button>
+          </div>
         </div>
-      </div>
-
-      <div className="pb-8 space-y-3 max-w-sm mx-auto w-full">
-        <button
-          onClick={onDismiss}
-          className="w-full py-4 rounded-full bg-white text-black font-black text-sm tracking-wide"
-        >
-          Dismiss (Scan Next)
-        </button>
-      </div>
+      </section>
     </div>
   );
 }

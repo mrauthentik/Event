@@ -18,20 +18,22 @@ export function AboutPreview() {
               {/* Back Main Image */}
               <div className="relative w-[85%] aspect-[4/5] rounded-[24px] overflow-hidden shadow-lg bg-gray-100">
                 <Image
-                  src="/images/about_us_1.jpg"
+                  src="/images/optimized/about_us_1.webp"
                   alt="Horemow ministry and fellowship"
                   fill
                   className="object-cover"
+                  sizes="(max-width: 768px) 85vw, 480px"
                 />
               </div>
 
               {/* Front Overlapping Image */}
               <div className="absolute top-12 right-0 w-[55%] aspect-square rounded-[20px] overflow-hidden shadow-2xl border-4 border-white bg-gray-100">
                 <Image
-                  src="/images/about_us_2.jpg"
+                  src="/images/optimized/about_us_2.webp"
                   alt="Horemow conference interaction"
                   fill
                   className="object-cover"
+                  sizes="(max-width: 768px) 55vw, 264px"
                 />
               </div>
 
@@ -44,10 +46,11 @@ export function AboutPreview() {
                 className="absolute -bottom-6 left-6 w-36 sm:w-44 aspect-[4/3] rounded-[16px] overflow-hidden shadow-xl border-2 border-white group block cursor-pointer"
               >
                 <Image
-                  src="/images/about_us_3.jpg"
+                  src="/images/optimized/about_us_3.webp"
                   alt="Conference video preview"
                   fill
                   className="object-cover group-hover:scale-105 transition-transform duration-300"
+                  sizes="(max-width: 640px) 144px, 176px"
                 />
                 {/* Mint tint overlay */}
                 <div className="absolute inset-0 bg-[#8EE3D6]/40 group-hover:bg-[#8EE3D6]/20 transition-colors flex items-center justify-center">

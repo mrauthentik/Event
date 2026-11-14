@@ -26,6 +26,9 @@ const settingsSchema = z.object({
   venueMapUrl: z.string().url().max(2048).optional().or(z.literal("")),
   contactPhone: z.string().trim().max(32).optional(),
   contactEmail: z.string().email().max(255).optional().or(z.literal("")),
+  bankName: z.string().trim().max(128).optional().or(z.literal("")),
+  bankAccountName: z.string().trim().max(128).optional().or(z.literal("")),
+  bankAccountNumber: z.string().trim().max(32).optional().or(z.literal("")),
   capacityLimit: z.number().int().positive().nullable().optional(),
   capacityAlertThresholds: thresholds.optional(),
 });
@@ -91,7 +94,7 @@ export async function PUT(req: NextRequest) {
           if (value === undefined) continue;
           if (key === "startsAt" || key === "endsAt" || key === "registrationDeadline") {
             update[key] = new Date(value as string);
-          } else if (key === "contactEmail") {
+          } else if (key === "contactEmail" || key === "bankName" || key === "bankAccountName" || key === "bankAccountNumber") {
             update[key] = value || null;
           } else {
             update[key] = value;

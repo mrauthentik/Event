@@ -34,7 +34,7 @@ export function DetailsCard() {
           <div className="grid grid-cols-1 items-center gap-6 p-6 sm:p-8 md:grid-cols-12">
             <div className="relative aspect-[4/3] overflow-hidden rounded-[14px] border border-[#CDEFEA] bg-[#EAF9F7] md:col-span-4">
               <Image
-                src="/images/campground.jpg"
+                src="/images/optimized/campground.webp"
                 alt="Holiness Campground, Kwali, Abuja, during the 2025 conference"
                 fill
                 className="object-cover"

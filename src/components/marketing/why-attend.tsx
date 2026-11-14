@@ -73,10 +73,11 @@ export function WhyAttend() {
               {/* Primary Main Image: Official Conference Flyer (parallax layer) */}
               <Parallax speed={0.18} className="col-span-8 col-start-1 relative aspect-[4/5] min-w-0 rounded-[24px] overflow-hidden shadow-xl bg-[#0E1020]">
                 <Image
-                  src="/images/conference_flyer.png"
+                  src="/images/optimized/conference_flyer.webp"
                   alt="Official flyer for the International Holiness General Conference 2026"
                   fill
                   className="object-contain"
+                  quality={90}
                   sizes="(max-width: 1024px) 100vw, 50vw"
                 />
               </Parallax>
@@ -84,7 +85,7 @@ export function WhyAttend() {
               {/* Secondary worship photo with a chamfered corner */}
               <Parallax speed={0.28} className="col-span-7 col-start-6 -ml-0 sm:-ml-16 mt-10 sm:mt-24 relative aspect-[3/4] min-w-0 rounded-[20px] overflow-hidden shadow-2xl clip-chamfer-tr bg-[#0E1020]">
                 <Image
-                  src="/images/crowd-bw.jpg"
+                  src="/images/optimized/crowd-bw.webp"
                   alt="Worshippers gathered for a conference service"
                   fill
                   className="object-cover"

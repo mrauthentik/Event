@@ -125,7 +125,9 @@ export default function RegisterPage() {
   const effectiveSeats = isGroup ? seatsCount : 1;
   const totalMinor = effectiveSeats * pricesMinor[currency];
   const formattedTotal = formatMoneyMinor(totalMinor, currency);
-  const checkoutProvider = providerByCurrency[currency] === "paystack" ? "Paystack" : "PayPal";
+  const checkoutProvider = providerByCurrency[currency] === "paystack"
+    ? "Paystack"
+    : providerByCurrency[currency] === "manual_transfer" ? "Bank Transfer" : "PayPal";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,6 +194,8 @@ export default function RegisterPage() {
       // Redirect to hosted payment checkout
       if (data.checkoutUrl) {
         window.location.href = data.checkoutUrl;
+      } else if (data.manualTransfer && data.ticketAccess) {
+        router.push(`/payment/manual-transfer?ref=${encodeURIComponent(data.reference)}&access=${encodeURIComponent(data.ticketAccess)}`);
       } else {
         router.push(`/payment/status?ref=${data.reference}`);
       }
@@ -210,11 +214,13 @@ export default function RegisterPage() {
         {/* Background Image with Dark Navy Gradient */}
         <div className="absolute inset-0 z-0">
           <Image
-            src="/images/conference_flyer.png"
-            alt="International Holiness General Conference 2026 flyer"
+            src="/images/optimized/conference_flyer.webp"
+            alt=""
             fill
             className="object-cover object-[center_35%] opacity-20 mix-blend-overlay"
-            priority
+            preload
+            quality={90}
+            sizes="100vw"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-[#0E1020]/90 via-[#0E1020]/80 to-[#0E1020]" />
         </div>

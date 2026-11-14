@@ -20,8 +20,12 @@ export interface PendingScan {
   attendeeId: string;
   scanType: "arrival" | "booklet";
   standId: string;
-  staffId: string;
-  deviceId: string;
+  /** Server attaches the authenticated staff identity at sync time. */
+  staffId?: string;
+  deviceId?: string;
+  /** Proof of the individual QR or signed group order QR that authorized this offline scan. */
+  ticketToken?: string;
+  groupOrderToken?: string;
   clientTimestamp: string;
   idempotencyKey: string;
   synced: boolean;

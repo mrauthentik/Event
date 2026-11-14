@@ -7,10 +7,11 @@ export function CtaBanner() {
       {/* Background Image */}
       <div className="absolute inset-0 z-0">
         <Image
-          src="/images/crowd-bw_3.jpg"
+          src="/images/optimized/crowd-bw_3.webp"
           alt="Congregation worshipping"
           fill
           className="object-cover opacity-25 mix-blend-overlay"
+          sizes="100vw"
         />
         {/* Dark Teal Overlay */}
         <div className="absolute inset-0 bg-gradient-to-r from-[#0E1E24]/90 via-[#0A1D24]/85 to-[#0E1E24]/90" />

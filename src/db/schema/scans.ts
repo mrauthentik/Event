@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, date, timestamp, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, date, timestamp, boolean, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { scanTypeEnum, scanResultEnum } from "./enums";
 import { attendees } from "./attendees";
 
@@ -48,7 +48,7 @@ export const bookletStock = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index("booklet_stock_stand_date_idx").on(table.standId, table.allocatedDate),
+    uniqueIndex("booklet_stock_stand_date_uq").on(table.standId, table.allocatedDate),
   ]
 );
 

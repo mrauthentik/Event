@@ -13,11 +13,12 @@ export function HeroBackground() {
     <div className="absolute inset-0 z-0 overflow-hidden">
       <Parallax speed={0.3} className="absolute -inset-y-[18%] inset-x-0">
         <Image
-          src="/images/crowd-bw_2.jpg"
+          src="/images/optimized/crowd-bw_2.webp"
           alt="Horemow International Holiness General Conference Congregation"
           fill
-          priority
+          preload
           className="object-cover object-center opacity-40 mix-blend-luminosity"
+          sizes="100vw"
         />
       </Parallax>
       {/* Multilayer gradient matching KILO desktop reference */}

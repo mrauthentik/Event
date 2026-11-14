@@ -21,7 +21,7 @@ export function MinisterCard({ name, role, bio, image, socials }: MinisterProps)
       {/* Left half: Full-bleed portrait image */}
       <div className="md:col-span-5 relative min-h-[320px] md:min-h-full aspect-[4/5] bg-gray-100">
         {image ? (
-          <Image src={image} alt={name} fill className="object-cover object-top" />
+          <Image src={image} alt={name} fill className="object-cover object-top" sizes="(max-width: 768px) 100vw, 42vw" />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-[#F3F4F6] p-6 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">
             Photo needed: {name}, unique portrait for this page

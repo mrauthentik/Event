@@ -29,6 +29,20 @@
       "when": 1794610200000,
       "tag": "0003_durable_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794610300000,
+      "tag": "0004_booklet_stock_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794610400000,
+      "tag": "0005_manual_transfer_details",
+      "breakpoints": true
     }
   ]
 }

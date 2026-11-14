@@ -23,7 +23,11 @@ export async function GET() {
 
     const routes = await db.select({ currency: providerRoutes.currency, provider: providerRoutes.primaryProvider, isEnabled: providerRoutes.isEnabled }).from(providerRoutes);
     const availability: Record<SupportedCurrency, boolean> = { NGN: true, USD: true, EUR: true, GBP: true };
-    for (const route of routes) availability[route.currency] = route.isEnabled && route.provider !== "manual_transfer";
+    const [bankDetails] = await db.select({ bankName: eventSettings.bankName, accountName: eventSettings.bankAccountName, accountNumber: eventSettings.bankAccountNumber }).from(eventSettings).limit(1);
+    const manualTransferConfigured = Boolean(bankDetails?.bankName?.trim() && bankDetails.accountName?.trim() && bankDetails.accountNumber?.trim());
+    for (const route of routes) {
+      availability[route.currency] = route.isEnabled && (route.provider !== "manual_transfer" || (route.currency === "NGN" && manualTransferConfigured));
+    }
     const providers: Record<SupportedCurrency, string> = {
       NGN: CURRENCIES.NGN.defaultProvider,
       USD: CURRENCIES.USD.defaultProvider,

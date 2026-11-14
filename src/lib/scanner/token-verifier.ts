@@ -37,8 +37,11 @@ export async function resolveScannedToken(tokenString: string): Promise<VerifyOu
   }
 
   if (attendee) return { status: "found", attendee };
-  if (trimmed.startsWith("HGC-")) {
-    return { status: "unknown", error: "Reference code not found in the current scanner roster." };
+  if (/^HGC-[A-HJ-NP-Z2-9]{6}$/i.test(trimmed)) {
+    return {
+      status: "unknown",
+      error: "A short reference can identify a ticket, but cannot authorize entry. Use Find attendee for a supervisor-approved manual check-in.",
+    };
   }
   if (!publicKey) return { status: "forged", error: "Ticket verification key is not configured." };
 

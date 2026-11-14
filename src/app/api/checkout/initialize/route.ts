@@ -141,7 +141,6 @@ export async function POST(req: NextRequest) {
     // Generate unique order reference (HGC-XXXXXX)
     const orderRef = generateRefCode();
     const idempotencyKey = `checkout_${requestKey}`;
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15-minute reservation timer
 
     // Find or seed standard ticket type
     let defaultTicketType = await db.query.ticketTypes.findFirst({
@@ -176,10 +175,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Checkout is temporarily unavailable for this currency." }, { status: 503 });
     }
     const selectedProvider = providerRoute?.primaryProvider ?? currencyConfig.defaultProvider;
-    if (selectedProvider === "manual_transfer") {
-      return NextResponse.json({ error: "Manual transfer checkout is not available yet." }, { status: 503 });
+    if (selectedProvider === "manual_transfer" && validated.currency !== "NGN") {
+      return NextResponse.json({ error: "Manual bank transfer is available for NGN registrations only." }, { status: 503 });
     }
-    const provider = getPaymentProviderByName(selectedProvider);
+    if (selectedProvider === "manual_transfer") {
+      const [bankDetails] = await db.select({ bankName: eventSettings.bankName, accountName: eventSettings.bankAccountName, accountNumber: eventSettings.bankAccountNumber }).from(eventSettings).limit(1);
+      if (!bankDetails?.bankName?.trim() || !bankDetails.accountName?.trim() || !bankDetails.accountNumber?.trim()) {
+        return NextResponse.json({ error: "Manual bank transfer is temporarily unavailable until the organizer configures the bank account details." }, { status: 503 });
+      }
+    }
+    const provider = selectedProvider === "manual_transfer" ? null : getPaymentProviderByName(selectedProvider);
+    const expiresAt = new Date(Date.now() + (selectedProvider === "manual_transfer" ? 24 * 60 * 60 * 1000 : 15 * 60 * 1000));
 
     // Wrap creation in database transaction
     const result = await db.transaction(async (tx) => {
@@ -383,6 +389,29 @@ export async function POST(req: NextRequest) {
           checkoutUrl: previousPayment.checkoutUrl,
         });
       }
+      if (previousPayment?.provider === "manual_transfer") {
+        const ticketAccess = await createOrderAccessToken(result.order.id);
+        return NextResponse.json({ success: true, manualTransfer: true, reference: result.order.reference, ticketAccess });
+      }
+    }
+
+    if (selectedProvider === "manual_transfer") {
+      const [existingPayment] = await db.select().from(payments).where(eq(payments.orderId, result.order.id)).limit(1);
+      if (existingPayment && existingPayment.provider !== "manual_transfer") {
+        return NextResponse.json({ error: "This registration already has a payment session. Resume it before changing payment methods." }, { status: 409 });
+      }
+      if (!existingPayment) {
+        await db.insert(payments).values({
+          orderId: result.order.id,
+          provider: "manual_transfer",
+          providerRef: `manual_order_${result.order.id}`,
+          status: "initiated",
+          currency: result.order.currency,
+          amountMinor: result.order.totalMinor,
+        });
+      }
+      const ticketAccess = await createOrderAccessToken(result.order.id);
+      return NextResponse.json({ success: true, manualTransfer: true, reference: result.order.reference, ticketAccess });
     }
 
     // 4. Initialize Payment Provider
@@ -390,10 +419,10 @@ export async function POST(req: NextRequest) {
     const callbackUrl = new URL("/payment/status", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
     callbackUrl.searchParams.set("ticket_access", ticketAccessToken);
 
-    const session = await provider.initializeCheckout({
+    const session = await provider!.initializeCheckout({
       orderId: result.order.id,
-      orderReference: orderRef,
-      amountMinor: totalMinor,
+      orderReference: result.order.reference,
+      amountMinor: result.order.totalMinor,
       currency: validated.currency as SupportedCurrency,
       payerName: validated.payerName,
       payerPhoneE164: payerPhone,
@@ -426,9 +455,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      reference: orderRef,
-      totalMinor,
-      currency: validated.currency,
+      reference: result.order.reference,
+      totalMinor: result.order.totalMinor,
+      currency: result.order.currency,
       checkoutUrl: checkoutUrl.toString(),
     });
   } catch (error: any) {

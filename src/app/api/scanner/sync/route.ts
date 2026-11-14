@@ -1,20 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
+import { and, count, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { attendees, auditLog, orders, scanEvents } from "@/db/schema";
+import { attendees, auditLog, bookletStock, orders, scanEvents } from "@/db/schema";
 import { requireRole } from "@/lib/auth/session";
 import { isSameOriginRequest } from "@/lib/security/origin";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { verifyTicketProof } from "@/lib/scanner/ticket-proof";
+import { getTicketVerifyingKey, verifyGroupOrderToken } from "@/lib/crypto/ed25519";
+import { calendarDateInZone } from "@/lib/timezone";
 
 const scanSchema = z.object({
   attendeeId: z.string().uuid(),
   scanType: z.enum(["arrival", "booklet"]),
   standId: z.string().trim().min(1).max(64),
   clientTimestamp: z.string().refine((value) => Number.isFinite(Date.parse(value))),
-  idempotencyKey: z.string().min(16).max(80),
+  idempotencyKey: z.string().min(16).max(128),
+  ticketToken: z.string().trim().min(32).max(4096).optional(),
+  groupOrderToken: z.string().trim().min(32).max(4096).optional(),
 });
-const syncSchema = z.object({ scans: z.array(scanSchema).min(1).max(500) });
+const syncSchema = z.object({ scans: z.array(scanSchema).min(1).max(100) });
 
 export async function POST(req: NextRequest) {
   if (!isSameOriginRequest(req)) {
@@ -34,7 +39,29 @@ export async function POST(req: NextRequest) {
   try {
     const { scans } = syncSchema.parse(await req.json());
     const now = new Date();
-    const parsed = scans.map((scan) => ({ ...scan, clientTime: new Date(scan.clientTimestamp) }));
+    const publicKey = getTicketVerifyingKey();
+    const groupProofCache = new Map<string, Awaited<ReturnType<typeof verifyGroupOrderToken>>>();
+    const parsed = await Promise.all(scans.map(async (scan) => {
+      let proof: { kind: "ticket"; tokenHash: string } | { kind: "group"; orderId: string; attendeeCount: number } | null = null;
+      if (Boolean(scan.ticketToken) !== Boolean(scan.groupOrderToken)) {
+        if (scan.ticketToken) {
+          const ticketProof = await verifyTicketProof(scan.ticketToken);
+          if (ticketProof.valid) proof = { kind: "ticket", tokenHash: ticketProof.tokenHash };
+        } else if (scan.groupOrderToken) {
+          let verified = groupProofCache.get(scan.groupOrderToken);
+          if (!verified) {
+            verified = await verifyGroupOrderToken(scan.groupOrderToken, publicKey);
+            groupProofCache.set(scan.groupOrderToken, verified);
+          }
+          if (verified.isValid) proof = {
+            kind: "group",
+            orderId: verified.payload.orderId,
+            attendeeCount: verified.payload.attendeeCount,
+          };
+        }
+      }
+      return { ...scan, clientTime: new Date(scan.clientTimestamp), proof };
+    }));
     if (parsed.some((scan) =>
       scan.clientTime.getTime() > now.getTime() + 2 * 60 * 1000 ||
       scan.clientTime.getTime() < now.getTime() - 30 * 24 * 60 * 60 * 1000
@@ -50,17 +77,55 @@ export async function POST(req: NextRequest) {
     await db.transaction(async (tx) => {
       for (const scan of parsed) {
         const idempotencyKey = `${user.id}:${scan.idempotencyKey}`;
-        const [existing] = await tx.select({ id: scanEvents.id })
+        if (!scan.proof) {
+          rejectedCount++;
+          await tx.insert(auditLog).values({
+            staffId: user.id,
+            action: "scanner_sync_invalid_proof",
+            entityType: "attendees",
+            entityId: scan.attendeeId,
+            oldState: null,
+            newState: { reason: "missing_or_invalid_ticket_proof", scanType: scan.scanType, idempotencyKey: scan.idempotencyKey },
+            ipAddress: ip === "unknown" ? null : ip,
+            userAgent: req.headers.get("user-agent"),
+          });
+          results.push({ idempotencyKey: scan.idempotencyKey, result: "rejected" });
+          continue;
+        }
+
+        const [existing] = await tx.select({ id: scanEvents.id, attendeeId: scanEvents.attendeeId, scanType: scanEvents.scanType })
           .from(scanEvents)
           .where(eq(scanEvents.idempotencyKey, idempotencyKey))
           .limit(1);
         if (existing) {
-          results.push({ idempotencyKey: scan.idempotencyKey, result: "duplicate" });
+          results.push({ idempotencyKey: scan.idempotencyKey, result: existing.attendeeId === scan.attendeeId && existing.scanType === scan.scanType ? "duplicate" : "rejected" });
+          if (existing.attendeeId !== scan.attendeeId || existing.scanType !== scan.scanType) rejectedCount++;
           continue;
         }
 
+        if (scan.proof.kind === "ticket") {
+          const [matchingTicket] = await tx.select({ id: attendees.id }).from(attendees)
+            .where(and(eq(attendees.id, scan.attendeeId), eq(attendees.qrTokenHash, scan.proof.tokenHash)))
+            .limit(1);
+          if (!matchingTicket) {
+            rejectedCount++;
+            await tx.insert(auditLog).values({
+              staffId: user.id,
+              action: "scanner_sync_invalid_proof",
+              entityType: "attendees",
+              entityId: scan.attendeeId,
+              oldState: null,
+              newState: { reason: "ticket_proof_does_not_match_attendee", scanType: scan.scanType, idempotencyKey: scan.idempotencyKey },
+              ipAddress: ip === "unknown" ? null : ip,
+              userAgent: req.headers.get("user-agent"),
+            });
+            results.push({ idempotencyKey: scan.idempotencyKey, result: "rejected" });
+            continue;
+          }
+        }
+
         const [record] = await tx
-          .select({ attendee: attendees, orderStatus: orders.status })
+          .select({ attendee: attendees, orderStatus: orders.status, isGroup: orders.isGroup })
           .from(attendees)
           .innerJoin(orders, eq(attendees.orderId, orders.id))
           .where(eq(attendees.id, scan.attendeeId))
@@ -82,6 +147,31 @@ export async function POST(req: NextRequest) {
           });
           results.push({ idempotencyKey: scan.idempotencyKey, result: "rejected" });
           continue;
+        }
+
+        if (scan.proof.kind === "group") {
+          const [groupOrder] = await tx.select({ id: orders.id }).from(orders)
+            .where(and(eq(orders.id, scan.proof.orderId), eq(orders.status, "paid"), eq(orders.isGroup, true)))
+            .limit(1);
+          const [groupCount] = groupOrder
+            ? await tx.select({ value: count() }).from(attendees)
+              .where(and(eq(attendees.orderId, groupOrder.id), isNull(attendees.deletedAt)))
+            : [{ value: 0 }];
+          if (!groupOrder || !record.isGroup || attendee.orderId !== scan.proof.orderId || groupCount.value !== scan.proof.attendeeCount) {
+            rejectedCount++;
+            await tx.insert(auditLog).values({
+              staffId: user.id,
+              action: "scanner_sync_invalid_group_proof",
+              entityType: "attendees",
+              entityId: attendee.id,
+              oldState: null,
+              newState: { reason: "group_order_proof_does_not_match_roster", scanType: scan.scanType, idempotencyKey: scan.idempotencyKey },
+              ipAddress: ip === "unknown" ? null : ip,
+              userAgent: req.headers.get("user-agent"),
+            });
+            results.push({ idempotencyKey: scan.idempotencyKey, result: "rejected" });
+            continue;
+          }
         }
 
         if (scan.scanType === "arrival") {
@@ -173,6 +263,27 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
+          const allocatedDate = calendarDateInZone(scan.clientTime, "Africa/Lagos");
+          const [stock] = await tx.select().from(bookletStock)
+            .where(and(eq(bookletStock.standId, scan.standId), eq(bookletStock.allocatedDate, allocatedDate)))
+            .for("update")
+            .limit(1);
+          if (!stock || stock.allocatedQuantity - stock.issuedCount - stock.returnedCount <= 0) {
+            await tx.insert(scanEvents).values({
+              attendeeId: attendee.id,
+              scanType: "booklet",
+              staffId: user.id,
+              standId: scan.standId,
+              clientTimestamp: scan.clientTime,
+              idempotencyKey,
+              result: "conflict",
+              notes: !stock ? "No booklet allocation was configured for this stand and event day." : "Booklet allocation was exhausted before this offline issue synchronized.",
+            });
+            conflictsCount++;
+            results.push({ idempotencyKey: scan.idempotencyKey, result: "conflict" });
+            continue;
+          }
+
           const [updated] = await tx.update(attendees).set({
             status: "booklet_issued",
             bookletIssuedAt: scan.clientTime,
@@ -183,6 +294,8 @@ export async function POST(req: NextRequest) {
             isNotNull(attendees.checkedInAt)
           )).returning({ id: attendees.id });
           if (!updated) throw new Error("Concurrent booklet update; retry sync.");
+          await tx.update(bookletStock).set({ issuedCount: stock.issuedCount + 1, updatedAt: now })
+            .where(eq(bookletStock.id, stock.id));
 
           await tx.insert(scanEvents).values({
             attendeeId: attendee.id,

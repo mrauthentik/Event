@@ -13,6 +13,9 @@ export const eventSettings = pgTable("event_settings", {
   venueMapUrl: text("venue_map_url"),
   contactPhone: varchar("contact_phone", { length: 32 }).notNull().default("+234 701 566 8452"),
   contactEmail: varchar("contact_email", { length: 255 }),
+  bankName: varchar("bank_name", { length: 128 }),
+  bankAccountName: varchar("bank_account_name", { length: 128 }),
+  bankAccountNumber: varchar("bank_account_number", { length: 32 }),
   capacityLimit: integer("capacity_limit"), // null = uncapped
   capacityAlertThresholds: text("capacity_alert_thresholds").default("8000,9000,10000"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
