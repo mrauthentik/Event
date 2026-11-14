@@ -127,10 +127,20 @@ export function useQrScanner(onDecoded: ScanHandler, onError?: (message: string)
     cameraStartingRef.current = true;
     setCameraStarting(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+      } catch (constraintErr) {
+        // Fallback for laptops, webcams, or devices where environmental camera is not present:
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: true,
+        });
+      }
+
       if (requestId !== startRequestRef.current) {
         stream.getTracks().forEach((track) => track.stop());
         return;
@@ -142,7 +152,12 @@ export function useQrScanner(onDecoded: ScanHandler, onError?: (message: string)
       }
       streamRef.current = stream;
       video.srcObject = stream;
-      await video.play();
+      try {
+        await video.play();
+      } catch {
+        video.muted = true;
+        await video.play();
+      }
       setCameraActive(true);
       detectorFailedRef.current = false;
       lastFrameAtRef.current = 0;

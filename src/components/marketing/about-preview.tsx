@@ -18,7 +18,7 @@ export function AboutPreview() {
               {/* Back Main Image */}
               <div className="relative w-[85%] aspect-[4/5] rounded-[24px] overflow-hidden shadow-lg bg-gray-100">
                 <Image
-                  src="/images/optimized/about_us_1.webp"
+                  src="/images/about_us_1.jpg"
                   alt="Horemow ministry and fellowship"
                   fill
                   className="object-cover"
@@ -29,7 +29,7 @@ export function AboutPreview() {
               {/* Front Overlapping Image */}
               <div className="absolute top-12 right-0 w-[55%] aspect-square rounded-[20px] overflow-hidden shadow-2xl border-4 border-white bg-gray-100">
                 <Image
-                  src="/images/optimized/about_us_2.webp"
+                  src="/images/about_us_2.jpg"
                   alt="Horemow conference interaction"
                   fill
                   className="object-cover"
@@ -46,7 +46,7 @@ export function AboutPreview() {
                 className="absolute -bottom-6 left-6 w-36 sm:w-44 aspect-[4/3] rounded-[16px] overflow-hidden shadow-xl border-2 border-white group block cursor-pointer"
               >
                 <Image
-                  src="/images/optimized/about_us_3.webp"
+                  src="/images/about_us_3.jpg"
                   alt="Conference video preview"
                   fill
                   className="object-cover group-hover:scale-105 transition-transform duration-300"
@@ -73,11 +73,11 @@ export function AboutPreview() {
             </h2>
 
             <p className="text-base text-[#6B7280] leading-relaxed">
-              Horemow is a non-denominational Christian ministry. Additional background information is being prepared by the organizers.
+              Founded in 2009 by Pastor Paul Rika and formally inaugurated in Kwali, Abuja in 2010, HOREMOW is an end-time movement operating across Christian denominations to revive biblical righteousness, inward and outward holiness, sanctification, and rapture readiness.
             </p>
 
             <p className="text-sm text-[#6B7280] leading-relaxed">
-              The official ministry profile will be added when its approved copy is available.
+              With chapters spanning Nigeria, East and West Africa, North America, and across the globe, the movement treats the 66 books of the Holy Bible as its absolute and final working manual.
             </p>
 
             <div className="pt-2">

@@ -80,11 +80,11 @@ export default function ConferencePage() {
             <div className="grid grid-cols-1 lg:grid-cols-2">
               <Parallax speed={0.15} className="relative aspect-[3/4] lg:aspect-auto lg:min-h-[560px] bg-[#0E1020]">
                 <Image
-                  src="/images/optimized/conference_flyer.webp"
+                  src="/images/conference_flyer.png"
                   alt="Official flyer for the International Holiness General Conference 2026 — Man and Satan in Contention Against the Holy God, 8–11 December 2026, Holiness Campground, Kwali, Abuja"
                   fill
                   className="object-contain"
-                  quality={90}
+                  quality={95}
                   sizes="(max-width: 1024px) 100vw, 50vw"
                 />
               </Parallax>
@@ -100,7 +100,7 @@ export default function ConferencePage() {
                 </p>
                 <div className="flex flex-wrap items-center gap-4 pt-2">
                   <a
-                    href="/images/optimized/conference_flyer.webp"
+                    href="/images/conference_flyer.png"
                     download="IHGC-2026-Flyer.png"
                     className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#0E1020] text-white font-bold text-sm hover:bg-[#1A1D36] transition-colors"
                   >

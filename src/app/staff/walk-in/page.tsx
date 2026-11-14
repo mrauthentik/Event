@@ -81,17 +81,17 @@ export default function WalkInRegistrationPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F5F7] text-[#111320] flex flex-col font-sans">
-      <header className="h-14 bg-[#0E1020] text-white px-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[#F4F5F7] text-[#111320] flex flex-col font-body">
+      <header className="h-14 bg-[#0E1020] text-white px-4 flex items-center justify-between font-heading">
         <div className="flex items-center gap-2">
           <Link href="/staff/scanner" className="text-gray-400 hover:text-white p-1">
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <span className="font-bold text-sm tracking-wide">
+          <span className="font-extrabold text-sm tracking-wide">
             WALK-IN GATE REGISTRATION
           </span>
         </div>
-        <div className="text-xs font-semibold px-2.5 py-1 bg-white/10 rounded-full text-[#8EE3D6]">
+        <div className="text-xs font-bold px-2.5 py-1 bg-white/10 rounded-full text-[#8EE3D6]">
           {standId}
         </div>
       </header>
@@ -100,7 +100,7 @@ export default function WalkInRegistrationPage() {
         {!completedAttendee ? (
           <div className="bg-white rounded-[24px] border border-gray-200 p-6 sm:p-8 shadow-sm space-y-6">
             <div className="space-y-1">
-              <h1 className="text-xl font-bold text-[#111320] flex items-center gap-2">
+              <h1 className="text-xl font-heading font-extrabold text-[#111320] flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-[#0E7A6E]" />
                 <span>Register & Check-in Walk-in Attendee</span>
               </h1>

@@ -84,13 +84,13 @@ export default function StaffLookupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F5F7] text-[#111320] flex flex-col font-sans">
-      <header className="h-14 bg-[#0E1020] text-white px-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[#F4F5F7] text-[#111320] flex flex-col font-body">
+      <header className="h-14 bg-[#0E1020] text-white px-4 flex items-center justify-between font-heading">
         <div className="flex items-center gap-2">
           <Link href="/staff/scanner" className="text-gray-400 hover:text-white p-1">
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <span className="font-bold text-sm tracking-wide">
+          <span className="font-extrabold text-sm tracking-wide">
             SUPERVISOR LOOKUP & OVERRIDE
           </span>
         </div>
@@ -101,7 +101,7 @@ export default function StaffLookupPage() {
         {/* Search Box */}
         <div className="bg-white rounded-[20px] border border-gray-200 p-6 shadow-2xs space-y-4">
           <div className="space-y-1">
-            <h1 className="text-base font-bold text-[#111320]">
+            <h1 className="text-base font-heading font-extrabold text-[#111320]">
               Manual Attendee Lookup
             </h1>
             <p className="text-xs text-gray-500">

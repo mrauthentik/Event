@@ -214,12 +214,12 @@ export default function RegisterPage() {
         {/* Background Image with Dark Navy Gradient */}
         <div className="absolute inset-0 z-0">
           <Image
-            src="/images/optimized/conference_flyer.webp"
+            src="/images/conference_flyer.png"
             alt=""
             fill
             className="object-cover object-[center_35%] opacity-20 mix-blend-overlay"
             preload
-            quality={90}
+            quality={95}
             sizes="100vw"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-[#0E1020]/90 via-[#0E1020]/80 to-[#0E1020]" />

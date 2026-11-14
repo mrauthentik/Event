@@ -7,7 +7,7 @@ export function CtaBanner() {
       {/* Background Image */}
       <div className="absolute inset-0 z-0">
         <Image
-          src="/images/optimized/crowd-bw_3.webp"
+          src="/images/crowd-bw_3.jpg"
           alt="Congregation worshipping"
           fill
           className="object-cover opacity-25 mix-blend-overlay"

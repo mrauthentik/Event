@@ -13,10 +13,11 @@ export function HeroBackground() {
     <div className="absolute inset-0 z-0 overflow-hidden">
       <Parallax speed={0.3} className="absolute -inset-y-[18%] inset-x-0">
         <Image
-          src="/images/optimized/crowd-bw_2.webp"
+          src="/images/crowd-bw.jpg"
           alt="Horemow International Holiness General Conference Congregation"
           fill
-          preload
+          priority
+          quality={95}
           className="object-cover object-center opacity-40 mix-blend-luminosity"
           sizes="100vw"
         />

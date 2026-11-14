@@ -119,12 +119,12 @@ export function Footer() {
             <div className="bg-[#121528] rounded-[16px] p-4 border border-white/5 space-y-3">
               <div className="relative aspect-[16/7] rounded-[10px] overflow-hidden bg-gray-900">
                 <Image
-                  src="/images/optimized/conference_flyer.webp"
+                  src="/images/conference_flyer.png"
                   alt="IHGC 2026 Conference Flyer"
                   fill
                   className="object-contain"
                   sizes="400px"
-                  quality={90}
+                  quality={95}
                 />
                 <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-[10px] font-semibold text-[#8EE3D6] backdrop-blur-xs">
                   8 – 11 Dec 2026

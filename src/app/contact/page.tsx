@@ -97,11 +97,22 @@ export default function ContactPage() {
 
           </div>
 
-          {/* Map and directions placeholder */}
-          <div className="space-y-3">
-            <h3 className="text-lg font-bold text-[#111320]">Map and travel directions</h3>
-            <div className="rounded-[20px] border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950">
-              A confirmed map pin and travel directions have not yet been provided by the organizers.
+          {/* Interactive Map */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-bold text-[#111320]">Location Map & Travel Directions</h3>
+            <div className="overflow-hidden rounded-[20px] border border-gray-200 shadow-sm bg-white">
+              <div className="aspect-[16/9] w-full min-h-[350px]">
+                <iframe
+                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4096.546839279105!2d7.057758310743839!3d8.829087291188033!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x104e8a458c737ff9%3A0x8547b10178d75a9c!2sHoliness%20Camp%20Ground%2C%20Kwali%20Abuja!5e1!3m2!1sen!2sng!4v1794127232959!5m2!1sen!2sng"
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0 }}
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  title="Google Maps - Holiness Campground Kwali Abuja"
+                />
+              </div>
             </div>
           </div>
 

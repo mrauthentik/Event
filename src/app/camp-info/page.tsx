@@ -38,11 +38,27 @@ export default function CampInfoPage() {
             <p className="text-sm text-gray-600">{SITE_CONFIG.venue.name}, {SITE_CONFIG.venue.landmark}, {SITE_CONFIG.venue.location}.</p>
           </section>
 
-          <section className="rounded-[18px] border border-amber-200 bg-amber-50 p-6 sm:p-8 space-y-2">
-            <h2 className="text-base font-bold text-amber-950">Map pin and travel directions needed</h2>
-            <p className="text-sm leading-relaxed text-amber-950">
-              The organizers have not confirmed a map pin or turn-by-turn directions. Check back here or contact the conference helpline before travel.
+          <section className="rounded-[18px] border border-gray-200 bg-white p-6 sm:p-8 space-y-4">
+            <div className="flex items-center gap-2 text-[#111320] font-bold">
+              <MapPin className="w-5 h-5 text-[#0E7A6E]" /> Confirmed Venue Location & Map
+            </div>
+            <p className="text-sm text-gray-600">
+              {SITE_CONFIG.venue.name}, {SITE_CONFIG.venue.landmark}, {SITE_CONFIG.venue.location}.
             </p>
+            <div className="overflow-hidden rounded-[14px] border border-gray-200 bg-gray-50">
+              <div className="aspect-[16/9] w-full min-h-[320px]">
+                <iframe
+                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4096.546839279105!2d7.057758310743839!3d8.829087291188033!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x104e8a458c737ff9%3A0x8547b10178d75a9c!2sHoliness%20Camp%20Ground%2C%20Kwali%20Abuja!5e1!3m2!1sen!2sng!4v1794127232959!5m2!1sen!2sng"
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0 }}
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  title="Holiness Camp Ground, Kwali, Abuja Map"
+                />
+              </div>
+            </div>
           </section>
 
           <section className="rounded-[18px] border border-gray-200 bg-[#F8FAFC] p-6 sm:p-8 space-y-3">
